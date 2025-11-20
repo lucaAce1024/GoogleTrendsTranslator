@@ -425,15 +425,11 @@
       // 如果没找到，尝试查找高 z-index 的绝对定位元素
       if (!tooltipElement) {
         // 限制搜索范围，避免遍历所有元素导致性能问题
-        const candidates = document.querySelectorAll('div[style*="position"], div[style*="z-index"]');
+        // 只搜索 div 元素，避免访问 SVG 元素的 className
+        const candidates = document.querySelectorAll('div');
         for (const el of candidates) {
           try {
-            // 安全地获取 className，避免触发 Google Trends 内部错误
-            const className = el.className;
-            if (className && typeof className !== 'string') {
-              continue; // 跳过非字符串的 className（如 SVGAnimatedString）
-            }
-            
+            // 完全避免访问 className，直接检查样式
             const style = window.getComputedStyle(el);
             if ((style.position === 'absolute' || style.position === 'fixed') &&
                 parseInt(style.zIndex) > 1000 &&
@@ -463,7 +459,39 @@
       }
       
       const tooltipText = tooltipElement.textContent || '';
-      console.log('[扩展] 找到 tooltip，内容:', tooltipText.substring(0, 200));
+      console.log('[扩展] ========== 找到 tooltip ==========');
+      console.log('[扩展] tooltip 完整内容:', tooltipText);
+      
+      // 直接从 tooltip 文本中提取数值（更可靠的方法）
+      // tooltip 格式通常是：
+      // "2025年11月13日\nGPTs: 9\nCasual Games: 4\nveo 3: 75\nnano banana 2: 9"
+      const termValuesFromTooltip = {};
+      const lines = tooltipText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      
+      console.log('[扩展] tooltip 行数:', lines.length);
+      lines.forEach((line, idx) => {
+        console.log(`[扩展] 第 ${idx + 1} 行:`, line);
+      });
+      
+      // 提取每个词的数值（格式：词名: 数值 或 词名 数值）
+      lines.forEach(line => {
+        // 匹配 "词名: 数值" 或 "词名 数值" 格式
+        const match1 = line.match(/^([^:：\d]+?)\s*[:：]\s*(\d{1,3})$/);
+        const match2 = line.match(/^([^:：\d]+?)\s+(\d{1,3})$/);
+        const match = match1 || match2;
+        
+        if (match) {
+          const term = match[1].trim();
+          const value = parseInt(match[2], 10);
+          if (!isNaN(value) && value >= 0 && value <= 100) {
+            const termLower = term.toLowerCase().trim();
+            termValuesFromTooltip[termLower] = value;
+            console.log(`[扩展] 提取到数值: "${term}" = ${value}`);
+          }
+        }
+      });
+      
+      console.log('[扩展] 从 tooltip 直接提取的数值:', termValuesFromTooltip);
       
       // 提取日期（支持中文和英文格式）
       // 格式1: "2025年11月16日至22日"
@@ -478,95 +506,85 @@
         dateMatch = tooltipText.match(/([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
       }
       
-      if (!dateMatch) {
-        console.log('[扩展] 无法从 tooltip 中提取日期');
+      let dateStr = null;
+      if (dateMatch) {
+        dateStr = dateMatch[1];
+        console.log('[扩展] 提取的日期:', dateStr);
+      } else {
+        console.log('[扩展] 无法从 tooltip 中提取日期，但继续使用直接提取的数值');
+      }
+      
+      // 优先使用直接从 tooltip 提取的数值
+      if (Object.keys(termValuesFromTooltip).length > 0) {
+        currentHoverData = {
+          date: dateStr || '未知日期',
+          values: termValuesFromTooltip,
+          dataPoint: null
+        };
+        console.log('[扩展] ========== 更新悬停数据（从 tooltip 直接提取）==========');
+        console.log('[扩展] 日期:', currentHoverData.date);
+        console.log('[扩展] 各词数值:', currentHoverData.values);
+        scheduleUpdate();
         return;
       }
       
-      const dateStr = dateMatch[1];
-      console.log('[扩展] 提取的日期:', dateStr);
-      
-      // 在 timelineData 中查找匹配的数据点
-      let matchedDataPoint = null;
-      for (const point of fullTimelineData) {
-        if (point.formattedTime && point.formattedTime.includes(dateStr)) {
-          matchedDataPoint = point;
-          break;
-        }
-        // 也尝试匹配部分日期（处理日期范围的情况）
-        if (dateStr.includes('至')) {
-          const startDate = dateStr.split('至')[0];
-          if (point.formattedTime && point.formattedTime.includes(startDate)) {
+      // 如果直接从 tooltip 提取失败，尝试从 timelineData 中查找
+      if (dateStr && fullTimelineData.length > 0) {
+        let matchedDataPoint = null;
+        for (const point of fullTimelineData) {
+          if (point.formattedTime && point.formattedTime.includes(dateStr)) {
             matchedDataPoint = point;
             break;
           }
-        }
-      }
-      
-      if (!matchedDataPoint) {
-        console.log('[扩展] 在 timelineData 中未找到匹配的数据点');
-        return;
-      }
-      
-      console.log('[扩展] 找到匹配的数据点:', {
-        time: matchedDataPoint.time,
-        formattedTime: matchedDataPoint.formattedTime,
-        formattedValue: matchedDataPoint.formattedValue,
-        value: matchedDataPoint.value
-      });
-      
-      // 从 URL 中获取关键词顺序（如果还没有获取过）
-      const keywords = Object.keys(apiData).length > 0 
-        ? Object.keys(apiData).map(k => {
-            // 尝试从 apiData 的键中恢复原始关键词
-            // 这里需要保存原始关键词映射
-            return k;
-          })
-        : [];
-      
-      // 如果有 keywords，提取对应的值
-      if (matchedDataPoint.formattedValue && Array.isArray(matchedDataPoint.formattedValue)) {
-        const valueArray = matchedDataPoint.formattedValue;
-        const termValues = {};
-        
-        // 使用保存的关键词顺序（keywordsOrder）
-        if (keywordsOrder.length > 0 && keywordsOrder.length === valueArray.length) {
-          keywordsOrder.forEach((term, index) => {
-            const valueStr = valueArray[index];
-            const value = valueStr === null || valueStr === undefined || valueStr === '' 
-              ? 0 
-              : parseInt(valueStr, 10);
-            if (!isNaN(value) && value >= 0 && value <= 100) {
-              termValues[term] = value;
+          // 也尝试匹配部分日期（处理日期范围的情况）
+          if (dateStr.includes('至')) {
+            const startDate = dateStr.split('至')[0];
+            if (point.formattedTime && point.formattedTime.includes(startDate)) {
+              matchedDataPoint = point;
+              break;
             }
+          }
+        }
+        
+        if (matchedDataPoint) {
+          console.log('[扩展] 从 timelineData 找到匹配的数据点:', {
+            time: matchedDataPoint.time,
+            formattedTime: matchedDataPoint.formattedTime,
+            formattedValue: matchedDataPoint.formattedValue,
+            value: matchedDataPoint.value
           });
-        } else if (Object.keys(apiData).length > 0) {
-          // 如果没有 keywordsOrder，使用 apiData 的键顺序（如果可用）
-          const apiKeys = Object.keys(apiData);
-          if (apiKeys.length === valueArray.length) {
-            apiKeys.forEach((term, index) => {
-              const valueStr = valueArray[index];
-              const value = valueStr === null || valueStr === undefined || valueStr === '' 
-                ? 0 
-                : parseInt(valueStr, 10);
-              if (!isNaN(value) && value >= 0 && value <= 100) {
-                termValues[term] = value;
+          
+          // 使用保存的关键词顺序（keywordsOrder）
+          if (matchedDataPoint.formattedValue && Array.isArray(matchedDataPoint.formattedValue)) {
+            const valueArray = matchedDataPoint.formattedValue;
+            const termValues = {};
+            
+            if (keywordsOrder.length > 0 && keywordsOrder.length === valueArray.length) {
+              keywordsOrder.forEach((term, index) => {
+                const valueStr = valueArray[index];
+                const value = valueStr === null || valueStr === undefined || valueStr === '' 
+                  ? 0 
+                  : parseInt(valueStr, 10);
+                if (!isNaN(value) && value >= 0 && value <= 100) {
+                  termValues[term] = value;
+                }
+              });
+              
+              if (Object.keys(termValues).length > 0) {
+                currentHoverData = {
+                  date: matchedDataPoint.formattedTime,
+                  values: termValues,
+                  dataPoint: matchedDataPoint
+                };
+                console.log('[扩展] ========== 更新悬停数据（从 timelineData）==========');
+                console.log('[扩展] 日期:', currentHoverData.date);
+                console.log('[扩展] 各词数值:', currentHoverData.values);
+                scheduleUpdate();
               }
-            });
+            }
           }
         } else {
-          console.warn('[扩展] 无法确定关键词顺序，无法提取数据');
-          return;
-        }
-        
-        if (Object.keys(termValues).length > 0) {
-          currentHoverData = {
-            date: matchedDataPoint.formattedTime,
-            values: termValues,
-            dataPoint: matchedDataPoint
-          };
-          console.log('[扩展] 更新悬停数据:', currentHoverData);
-          scheduleUpdate();
+          console.log('[扩展] 在 timelineData 中未找到匹配的数据点');
         }
       }
     } catch (e) {
