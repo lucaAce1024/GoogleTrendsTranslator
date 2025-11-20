@@ -545,7 +545,37 @@
         };
         
         // 在原生 tooltip 中插入转换后的数值
-        enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+        // 使用延迟确保 tooltip 内容已完全更新
+        setTimeout(() => {
+          enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+        }, 50);
+        
+        // 使用 setInterval 持续检查并重新应用转换值（防止被 Google Trends 移除）
+        // 清除之前的 interval（如果存在）
+        if (nativeTooltipElement.dataset.checkIntervalId) {
+          clearInterval(parseInt(nativeTooltipElement.dataset.checkIntervalId));
+        }
+        
+        const checkInterval = setInterval(() => {
+          // 检查 tooltip 是否仍然存在
+          if (!document.body.contains(nativeTooltipElement)) {
+            clearInterval(checkInterval);
+            delete nativeTooltipElement.dataset.checkIntervalId;
+            return;
+          }
+          
+          // 检查是否有我们的转换值
+          const existingSpans = nativeTooltipElement.querySelectorAll('span[style*="margin-left"]');
+          const hasOurSpans = Array.from(existingSpans).some(span => span.textContent.includes('→'));
+          
+          // 如果没有转换值，重新应用
+          if (!hasOurSpans && Object.keys(termValuesFromTooltip).length > 0) {
+            enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+          }
+        }, 150); // 每 150ms 检查一次
+        
+        // 保存 interval ID，以便后续清除
+        nativeTooltipElement.dataset.checkIntervalId = checkInterval.toString();
         
         scheduleUpdate();
         return;
@@ -1284,23 +1314,24 @@
   // 9) 在原生 tooltip 中插入转换后的数值
   function enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr) {
     try {
-      // 清除之前的增强标记（如果 tooltip 内容已更新）
-      const currentText = tooltipElement.textContent || '';
-      const cachedText = tooltipContentCache.get(tooltipElement);
-      if (cachedText !== currentText) {
-        // 内容已更新，清除之前的增强标记
-        tooltipElement.dataset.enhanced = 'false';
-        // 移除之前添加的转换值（查找包含 "→" 的 span）
-        const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
-        existingSpans.forEach(span => {
-          if (span.textContent.includes('→')) {
-            span.remove();
-          }
-        });
+      // 清除之前的增强标记和转换值
+      tooltipElement.dataset.enhanced = 'false';
+      const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+      existingSpans.forEach(span => {
+        if (span.textContent.includes('→')) {
+          span.remove();
+        }
+      });
+      
+      // 检查 tooltip 是否仍然存在且可见
+      const tooltipStyle = window.getComputedStyle(tooltipElement);
+      if (tooltipStyle.display === 'none' || tooltipStyle.visibility === 'hidden') {
+        return;
       }
       
-      // 检查是否已经处理过（避免重复处理）
-      if (tooltipElement.dataset.enhanced === 'true') {
+      // 检查是否包含日期和数值（确保是有效的 tooltip）
+      const tooltipText = tooltipElement.textContent || '';
+      if (!tooltipText.match(/\d{4}年\d{1,2}月\d{1,2}日/) && !tooltipText.match(/\d{4}-\d{2}-\d{2}/)) {
         return;
       }
       
@@ -1427,26 +1458,49 @@
       // 使用 MutationObserver 持续监听 tooltip 变化，确保转换值不被移除
       if (!tooltipElement.dataset.observerAdded) {
         tooltipElement.dataset.observerAdded = 'true';
+        let reapplyTimer = null;
+        
         const tooltipObserver = new MutationObserver((mutations) => {
-          // 检查是否有我们添加的 span 被移除
+          // 检查是否有我们添加的 span 被移除，或者 tooltip 内容发生了变化
           const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
           const hasOurSpans = Array.from(existingSpans).some(span => span.textContent.includes('→'));
           
-          // 如果我们的 span 被移除了，重新添加
-          if (!hasOurSpans && Object.keys(termValues).length > 0) {
-            // 延迟重新添加，避免循环
-            setTimeout(() => {
-              if (tooltipElement.dataset.enhanced !== 'true') {
-                tooltipElement.dataset.enhanced = 'false';
-                enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr);
-              }
-            }, 50);
+          // 检查是否有节点被移除（说明 Google Trends 重新渲染了 tooltip）
+          const hasRemovedNodes = mutations.some(mutation => 
+            mutation.removedNodes.length > 0 && 
+            Array.from(mutation.removedNodes).some(node => 
+              node.nodeType === Node.ELEMENT_NODE && 
+              node.querySelector && 
+              node.querySelector('span[style*="margin-left"]')
+            )
+          );
+          
+          // 如果我们的 span 被移除了，或者 tooltip 内容发生了变化，重新添加
+          if ((!hasOurSpans || hasRemovedNodes) && Object.keys(termValues).length > 0) {
+            // 使用防抖，避免频繁重新应用
+            if (reapplyTimer) {
+              clearTimeout(reapplyTimer);
+            }
+            reapplyTimer = setTimeout(() => {
+              // 清除增强标记，强制重新处理
+              tooltipElement.dataset.enhanced = 'false';
+              // 移除所有残留的转换值 span
+              const oldSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+              oldSpans.forEach(span => {
+                if (span.textContent.includes('→')) {
+                  span.remove();
+                }
+              });
+              // 重新提取并增强
+              enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr);
+            }, 100); // 延迟 100ms，确保 Google Trends 完成更新
           }
         });
         
         tooltipObserver.observe(tooltipElement, {
           childList: true,
-          subtree: true
+          subtree: true,
+          characterData: true
         });
       }
       
