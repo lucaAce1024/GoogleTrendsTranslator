@@ -1404,18 +1404,8 @@
           
           // 插入到数值节点后面
           if (textNode.parentNode) {
+            // 直接插入到数值节点后面，保持原有布局
             textNode.parentNode.insertBefore(span, textNode.nextSibling);
-            
-            // 确保父元素不换行
-            let parent = textNode.parentNode;
-            while (parent && parent !== tooltipElement) {
-              const style = window.getComputedStyle(parent);
-              if (style.display === 'block' || style.display === 'flex') {
-                parent.style.whiteSpace = 'nowrap';
-                parent.style.display = 'inline-block';
-              }
-              parent = parent.parentNode;
-            }
           }
         }
       });
@@ -1446,41 +1436,82 @@
         });
       }
       
-      // 调整 tooltip 宽度以适应内容，防止换行
+      // 调整 tooltip 宽度以适应内容，确保数值对齐
       // 使用 requestAnimationFrame 确保在 DOM 更新后执行
       requestAnimationFrame(() => {
         try {
+          // 查找所有我们添加的转换值 span
+          const allValueSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+          
+          if (allValueSpans.length > 0) {
+            // 找到每个数值+转换值的父容器（通常是包含数值的行）
+            const valueContainers = new Set();
+            allValueSpans.forEach(span => {
+              // 向上查找，找到包含数值的块级容器
+              let container = span.parentNode;
+              while (container && container !== tooltipElement) {
+                const style = window.getComputedStyle(container);
+                if (style.display === 'block' || style.display === 'flex') {
+                  valueContainers.add(container);
+                  break;
+                }
+                container = container.parentNode;
+              }
+            });
+            
+            // 为每个包含数值的容器设置样式，确保每个词一行
+            valueContainers.forEach(container => {
+              container.style.display = 'block';
+              container.style.whiteSpace = 'normal'; // 允许正常换行，但保持块级布局
+            });
+            
+            // 计算所有数值+转换值的最大宽度，用于对齐
+            let maxValueWidth = 0;
+            allValueSpans.forEach(span => {
+              const parent = span.parentNode;
+              if (parent) {
+                // 获取包含数值和转换值的完整文本
+                const siblings = Array.from(parent.childNodes);
+                const valueIndex = siblings.indexOf(span.previousSibling);
+                if (valueIndex >= 0) {
+                  const valueNode = siblings[valueIndex];
+                  const fullText = (valueNode.textContent || '').trim() + span.textContent;
+                  
+                  // 创建临时元素测量宽度
+                  const temp = document.createElement('span');
+                  temp.style.visibility = 'hidden';
+                  temp.style.position = 'absolute';
+                  temp.style.whiteSpace = 'nowrap';
+                  temp.style.fontSize = window.getComputedStyle(span).fontSize;
+                  temp.textContent = fullText;
+                  document.body.appendChild(temp);
+                  const width = temp.offsetWidth;
+                  document.body.removeChild(temp);
+                  
+                  if (width > maxValueWidth) {
+                    maxValueWidth = width;
+                  }
+                }
+              }
+            });
+            
+            // 为所有包含数值的容器设置最小宽度，确保数值对齐
+            if (maxValueWidth > 0) {
+              valueContainers.forEach(container => {
+                container.style.minWidth = maxValueWidth + 20 + 'px';
+              });
+            }
+          }
+          
+          // 调整 tooltip 整体宽度以适应内容
           const currentWidth = tooltipElement.offsetWidth;
           const scrollWidth = tooltipElement.scrollWidth;
           
-          // 如果内容宽度超过当前宽度，调整宽度
           if (scrollWidth > currentWidth) {
             tooltipElement.style.width = 'auto';
-            tooltipElement.style.minWidth = scrollWidth + 20 + 'px'; // 增加 20px 的边距
+            tooltipElement.style.minWidth = scrollWidth + 20 + 'px';
             tooltipElement.style.maxWidth = 'none';
           }
-          
-          // 确保 tooltip 不换行（但不要强制设置，避免影响 Google Trends 的布局）
-          // tooltipElement.style.whiteSpace = 'nowrap';
-          
-          // 确保所有包含数值的行不换行
-          // 查找包含数值的父元素（通常是每行的容器）
-          textNodes.forEach(textNode => {
-            let parent = textNode.parentNode;
-            let depth = 0;
-            while (parent && parent !== tooltipElement && depth < 3) {
-              const parentStyle = window.getComputedStyle(parent);
-              // 如果是块级元素，改为 inline-block 并设置 nowrap（但只针对包含我们添加的 span 的元素）
-              if (parent.querySelector('span[style*="margin-left"]')) {
-                if (parentStyle.display === 'block' || parentStyle.display === 'flex') {
-                  parent.style.whiteSpace = 'nowrap';
-                  parent.style.display = 'inline-block';
-                }
-              }
-              parent = parent.parentNode;
-              depth++;
-            }
-          });
         } catch (e) {
           // 忽略样式设置错误
         }
