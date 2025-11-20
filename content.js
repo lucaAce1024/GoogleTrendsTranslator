@@ -416,17 +416,26 @@
           try {
             const style = window.getComputedStyle(el);
             const zIndex = parseInt(style.zIndex) || 0;
-            if ((style.position === 'absolute' || style.position === 'fixed') &&
+            const position = style.position;
+            const display = style.display;
+            const text = el.textContent?.trim() || '';
+            
+            console.log(`[扩展] 检查元素: position=${position}, z-index=${zIndex}, display=${display}, text长度=${text.length}`);
+            if (text.length > 0) {
+              console.log(`[扩展] 元素文本内容: "${text.substring(0, 200)}"`);
+            }
+            
+            if ((position === 'absolute' || position === 'fixed') &&
                 zIndex > 1000 &&
-                style.display !== 'none' &&
-                el.textContent && el.textContent.trim().length > 0) {
-              const text = el.textContent.trim();
-              console.log(`[扩展] 找到候选 tooltip (${selector}): z-index=${zIndex}, text="${text.substring(0, 100)}"`);
+                display !== 'none' &&
+                text.length > 0) {
+              // 先不检查日期格式，只要符合位置和 z-index 条件就认为是 tooltip
+              console.log(`[扩展] 找到候选 tooltip (${selector}): z-index=${zIndex}, text="${text.substring(0, 200)}"`);
               tooltipElement = el;
               break;
             }
           } catch (e) {
-            // 忽略错误
+            console.warn(`[扩展] 检查元素时出错:`, e);
           }
         }
         if (tooltipElement) break;
@@ -448,13 +457,23 @@
                 style.display !== 'none') {
               candidateCount++;
               const text = el.textContent?.trim() || '';
-              // 检查是否包含日期格式（中文或英文）
+              
+              if (candidateCount <= 3) {
+                // 打印前3个候选元素的信息
+                console.log(`[扩展] 候选元素[${candidateCount}]: z-index=${zIndex}, text="${text.substring(0, 200)}"`);
+              }
+              
+              // 检查是否包含日期格式或数值格式（放宽条件）
               if (text.length > 0 && (
                 /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
                 /\d{4}-\d{2}-\d{2}/.test(text) ||
-                /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
+                /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text) ||
+                // 也检查是否包含类似 "GPTs: 9" 或 "Casual Games: 4" 的格式
+                /[A-Za-z\s]+:\s*\d{1,3}/.test(text) ||
+                // 或者包含多个数字（可能是多个词的数值）
+                (text.match(/\d{1,3}/g) && text.match(/\d{1,3}/g).length >= 2)
               )) {
-                console.log(`[扩展] 找到候选 tooltip (方法2): z-index=${zIndex}, text="${text.substring(0, 200)}"`);
+                console.log(`[扩展] 找到候选 tooltip (方法2): z-index=${zIndex}, text="${text.substring(0, 300)}"`);
                 tooltipElement = el;
                 break;
               }
