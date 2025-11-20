@@ -34,6 +34,9 @@
   // 存储当前鼠标位置对应的数据点（从 tooltip 中提取）
   let currentHoverData = null;
   
+  // 显示模式：'daily' 或 'monthly'，默认 'daily'
+  let displayMode = 'daily';
+  
   // 存储待处理的响应（在parseApiResponse定义前拦截到的请求）
   let pendingResponses = [];
   
@@ -772,12 +775,63 @@
       el = document.createElement("div");
       el.id = "trends-volume-overlay";
       el.innerHTML = `
-        <div class="title">估算搜索量</div>
+        <div class="title">
+          <span>估算搜索量</span>
+          <div class="mode-switch">
+            <button class="mode-btn ${displayMode === 'daily' ? 'active' : ''}" data-mode="daily">日</button>
+            <button class="mode-btn ${displayMode === 'monthly' ? 'active' : ''}" data-mode="monthly">月</button>
+          </div>
+        </div>
         <div id="trends-volume-rows"></div>
         <div class="sub">基于参照词动态折算</div>
       `;
       document.body.appendChild(el);
       makeDraggable(el);
+      
+      // 绑定切换开关事件
+      const modeButtons = el.querySelectorAll('.mode-btn');
+      modeButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const mode = btn.dataset.mode;
+          displayMode = mode;
+          
+          // 更新按钮状态
+          modeButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          // 重新渲染
+          if (currentHoverData && currentHoverData.values) {
+            const reference = findReferenceTerm(currentHoverData.values);
+            render(currentHoverData.values, `估算搜索量（${currentHoverData.date}）`, reference);
+          } else if (Object.keys(apiData).length > 0) {
+            const reference = findReferenceTerm(apiData);
+            render(apiData, "估算搜索量（最后时间点）", reference);
+          }
+          
+          // 重新处理原生 tooltip
+          const tooltipSelectors = ['[role="tooltip"]', '[class*="tooltip"]'];
+          for (const selector of tooltipSelectors) {
+            const tooltips = document.querySelectorAll(selector);
+            for (const tooltip of tooltips) {
+              const text = tooltip.textContent || '';
+              if (text.includes('年') && text.includes('月') && !text.includes('估算搜索量')) {
+                // 清除之前的增强标记，重新处理
+                tooltip.dataset.enhanced = 'false';
+                const existingSpans = tooltip.querySelectorAll('span[style*="margin-left"]');
+                existingSpans.forEach(span => {
+                  if (span.textContent.includes('→')) {
+                    span.remove();
+                  }
+                });
+                // 重新提取并增强
+                extractDataFromTooltip();
+                break;
+              }
+            }
+          }
+        });
+      });
     }
     return el;
   }
@@ -1118,17 +1172,23 @@
       const color = termColors[termLower] || termColors[term] || "#999999";
       const displayTerm = term.length > 20 ? term.substring(0, 17) + "..." : term;
 
+      // 根据显示模式只显示日或月
+      let searchVolumeText = '';
+      if (displayMode === 'daily' && dailySearchFormatted != null) {
+        searchVolumeText = ` → ${dailySearchFormatted}/日`;
+      } else if (displayMode === 'monthly' && monthlySearchFormatted != null) {
+        searchVolumeText = ` → ${monthlySearchFormatted}/月`;
+      }
+      
       return `
         <div class="row">
           <div class="term">
             <span class="dot" style="background:${color}"></span>
             <span>${displayTerm}</span>
           </div>
-              <div class="value">
-                ${idx != null ? `${idx}` : "-"}
-                ${dailySearchFormatted != null ? ` → ${dailySearchFormatted}/日` : ""}
-                ${monthlySearchFormatted != null ? ` (${monthlySearchFormatted}/月)` : ""}
-              </div>
+          <div class="value">
+            ${idx != null ? `${idx}` : "-"}${searchVolumeText}
+          </div>
         </div>
       `;
     }).join("");
@@ -1269,15 +1329,24 @@
         
         if (dailySearch !== null) {
           monthlySearch = dailySearch * 30;
-          const dailyFormatted = formatToK(dailySearch);
-          const monthlyFormatted = formatToK(monthlySearch);
+          
+          // 根据显示模式只显示日或月
+          let searchVolumeText = '';
+          if (displayMode === 'daily') {
+            const dailyFormatted = formatToK(dailySearch);
+            searchVolumeText = ` → ${dailyFormatted}/日`;
+          } else {
+            const monthlyFormatted = formatToK(monthlySearch);
+            searchVolumeText = ` → ${monthlyFormatted}/月`;
+          }
           
           // 在数值后面插入转换后的值
           const span = document.createElement('span');
           span.style.marginLeft = '4px';
           span.style.color = '#666';
           span.style.fontSize = '0.9em';
-          span.textContent = ` → ${dailyFormatted}/日 (${monthlyFormatted}/月)`;
+          span.style.whiteSpace = 'nowrap';
+          span.textContent = searchVolumeText;
           
           // 插入到数值节点后面
           if (textNode.parentNode) {
