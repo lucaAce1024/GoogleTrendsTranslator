@@ -396,22 +396,21 @@
     }
   }
 
-  // 从 tooltip 中提取数据点信息
+  // 从 tooltip 中提取数据点信息，并在原生 tooltip 中插入转换后的数值
   function extractDataFromTooltip() {
     try {
-      console.log('[扩展] ========== extractDataFromTooltip 开始执行 ==========');
-      
-      // 方法1: 查找所有可能的 tooltip 元素
+      // 查找 Google Trends 的原生 tooltip（排除我们自己的悬浮窗）
       const tooltipSelectors = [
         '[role="tooltip"]',
         '[class*="tooltip"]',
         '[class*="hover"]'
       ];
       
-      let tooltipElement = null;
+      let nativeTooltipElement = null;
+      
+      // 方法1: 查找所有可能的 tooltip 元素
       for (const selector of tooltipSelectors) {
         const elements = document.querySelectorAll(selector);
-        console.log(`[扩展] 使用选择器 "${selector}" 找到 ${elements.length} 个元素`);
         for (const el of elements) {
           try {
             const style = window.getComputedStyle(el);
@@ -420,120 +419,110 @@
             const display = style.display;
             const text = el.textContent?.trim() || '';
             
-            console.log(`[扩展] 检查元素: position=${position}, z-index=${zIndex}, display=${display}, text长度=${text.length}`);
-            if (text.length > 0) {
-              console.log(`[扩展] 元素文本内容: "${text.substring(0, 200)}"`);
+            // 排除我们自己的悬浮窗（包含"估算搜索量"）
+            if (text.includes('估算搜索量')) {
+              continue;
             }
             
+            // 查找包含日期和数值的 tooltip（Google Trends 原生 tooltip）
             if ((position === 'absolute' || position === 'fixed') &&
-                zIndex > 1000 &&
                 display !== 'none' &&
-                text.length > 0) {
-              // 先不检查日期格式，只要符合位置和 z-index 条件就认为是 tooltip
-              console.log(`[扩展] 找到候选 tooltip (${selector}): z-index=${zIndex}, text="${text.substring(0, 200)}"`);
-              tooltipElement = el;
+                text.length > 0 &&
+                // 包含日期格式
+                (/\d{4}年\d{1,2}月\d{1,2}日/.test(text) || /\d{4}-\d{2}-\d{2}/.test(text)) &&
+                // 包含多个数值（多个词的数值）
+                text.match(/\d{1,3}/g) && text.match(/\d{1,3}/g).length >= 2) {
+              nativeTooltipElement = el;
               break;
             }
           } catch (e) {
-            console.warn(`[扩展] 检查元素时出错:`, e);
+            // 忽略错误
           }
         }
-        if (tooltipElement) break;
+        if (nativeTooltipElement) break;
       }
       
-      // 方法2: 如果没找到，尝试查找所有高 z-index 的绝对定位 div 元素
-      if (!tooltipElement) {
-        console.log('[扩展] 方法1未找到，尝试方法2：查找所有高 z-index 的 div');
+      // 方法2: 如果没找到，查找所有包含日期和数值的 div
+      if (!nativeTooltipElement) {
         const allDivs = document.querySelectorAll('div');
-        console.log(`[扩展] 总共找到 ${allDivs.length} 个 div 元素`);
-        
-        let candidateCount = 0;
         for (const el of allDivs) {
           try {
             const style = window.getComputedStyle(el);
-            const zIndex = parseInt(style.zIndex) || 0;
-            if ((style.position === 'absolute' || style.position === 'fixed') &&
-                zIndex > 1000 &&
-                style.display !== 'none') {
-              candidateCount++;
-              const text = el.textContent?.trim() || '';
-              
-              if (candidateCount <= 3) {
-                // 打印前3个候选元素的信息
-                console.log(`[扩展] 候选元素[${candidateCount}]: z-index=${zIndex}, text="${text.substring(0, 200)}"`);
-              }
-              
-              // 检查是否包含日期格式或数值格式（放宽条件）
-              if (text.length > 0 && (
-                /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
-                /\d{4}-\d{2}-\d{2}/.test(text) ||
-                /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text) ||
-                // 也检查是否包含类似 "GPTs: 9" 或 "Casual Games: 4" 的格式
-                /[A-Za-z\s]+:\s*\d{1,3}/.test(text) ||
-                // 或者包含多个数字（可能是多个词的数值）
-                (text.match(/\d{1,3}/g) && text.match(/\d{1,3}/g).length >= 2)
-              )) {
-                console.log(`[扩展] 找到候选 tooltip (方法2): z-index=${zIndex}, text="${text.substring(0, 300)}"`);
-                tooltipElement = el;
-                break;
-              }
+            const position = style.position;
+            const display = style.display;
+            const text = el.textContent?.trim() || '';
+            
+            // 排除我们自己的悬浮窗
+            if (text.includes('估算搜索量') || el.id === 'trends-volume-overlay') {
+              continue;
+            }
+            
+            // 查找包含日期和数值的 tooltip
+            if ((position === 'absolute' || position === 'fixed') &&
+                display !== 'none' &&
+                text.length > 0 &&
+                /\d{4}年\d{1,2}月\d{1,2}日/.test(text) &&
+                text.match(/\d{1,3}/g) && text.match(/\d{1,3}/g).length >= 2) {
+              nativeTooltipElement = el;
+              break;
             }
           } catch (e) {
-            // 忽略单个元素的错误，继续查找
             continue;
           }
         }
-        console.log(`[扩展] 方法2检查了 ${candidateCount} 个高 z-index 元素`);
       }
       
-      if (!tooltipElement) {
-        // 没有找到 tooltip
-        console.log('[扩展] 未找到 tooltip 元素');
-        return;
+      if (!nativeTooltipElement) {
+        return; // 没有找到原生 tooltip
       }
       
-      console.log('[扩展] 成功找到 tooltip 元素！');
+      const tooltipText = nativeTooltipElement.textContent || '';
       
-      const tooltipText = tooltipElement.textContent || '';
-      console.log('[扩展] ========== 找到 tooltip ==========');
-      console.log('[扩展] tooltip 完整内容:', tooltipText);
-      
-      // 直接从 tooltip 文本中提取数值（更可靠的方法）
+      // 从 tooltip 文本中提取数值
       // tooltip 格式通常是：
-      // "2025年11月13日\nGPTs: 9\nCasual Games: 4\nveo 3: 75\nnano banana 2: 9"
+      // "2025年11月19日 11:00\nGPTs\n14\nCasual Games\n6\nveo 3\n85\nnano banana 2\n13"
       const termValuesFromTooltip = {};
       const lines = tooltipText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       
-      console.log('[扩展] tooltip 行数:', lines.length);
-      lines.forEach((line, idx) => {
-        console.log(`[扩展] 第 ${idx + 1} 行:`, line);
-      });
-      
-      // 提取每个词的数值（格式：词名: 数值 或 词名 数值）
-      lines.forEach(line => {
-        // 匹配 "词名: 数值" 或 "词名 数值" 格式
-        const match1 = line.match(/^([^:：\d]+?)\s*[:：]\s*(\d{1,3})$/);
-        const match2 = line.match(/^([^:：\d]+?)\s+(\d{1,3})$/);
-        const match = match1 || match2;
+      // 提取日期和数值
+      let currentTerm = null;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         
-        if (match) {
-          const term = match[1].trim();
-          const value = parseInt(match[2], 10);
-          if (!isNaN(value) && value >= 0 && value <= 100) {
-            const termLower = term.toLowerCase().trim();
-            termValuesFromTooltip[termLower] = value;
-            console.log(`[扩展] 提取到数值: "${term}" = ${value}`);
-          }
+        // 跳过日期行
+        if (/\d{4}年\d{1,2}月\d{1,2}日/.test(line)) {
+          continue;
         }
-      });
+        
+        // 检查是否是数值（1-100之间的数字）
+        const numMatch = line.match(/^(\d{1,3})$/);
+        if (numMatch && currentTerm) {
+          const value = parseInt(numMatch[1], 10);
+          if (value >= 0 && value <= 100) {
+            termValuesFromTooltip[currentTerm.toLowerCase().trim()] = value;
+            currentTerm = null; // 重置
+          }
+        } else if (line.length > 0 && !/^\d+$/.test(line)) {
+          // 可能是词名（不是纯数字）
+          currentTerm = line;
+        }
+      }
       
-      console.log('[扩展] 从 tooltip 直接提取的数值:', termValuesFromTooltip);
+      // 如果上面的方法没提取到，尝试另一种格式（"词名: 数值"）
+      if (Object.keys(termValuesFromTooltip).length === 0) {
+        lines.forEach(line => {
+          const match = line.match(/^([^:：\d]+?)\s*[:：]\s*(\d{1,3})$/);
+          if (match) {
+            const term = match[1].trim();
+            const value = parseInt(match[2], 10);
+            if (!isNaN(value) && value >= 0 && value <= 100) {
+              termValuesFromTooltip[term.toLowerCase().trim()] = value;
+            }
+          }
+        });
+      }
       
       // 提取日期（支持中文和英文格式）
-      // 格式1: "2025年11月16日至22日"
-      // 格式2: "2025年11月16日"
-      // 格式3: "2024-11-20 2025-11-20"
-      // 格式4: "November 16, 2025"
       let dateMatch = tooltipText.match(/(\d{4}年\d{1,2}月\d{1,2}日(?:至\d{1,2}日)?)/);
       if (!dateMatch) {
         dateMatch = tooltipText.match(/(\d{4}-\d{2}-\d{2})/);
@@ -542,24 +531,19 @@
         dateMatch = tooltipText.match(/([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
       }
       
-      let dateStr = null;
-      if (dateMatch) {
-        dateStr = dateMatch[1];
-        console.log('[扩展] 提取的日期:', dateStr);
-      } else {
-        console.log('[扩展] 无法从 tooltip 中提取日期，但继续使用直接提取的数值');
-      }
+      const dateStr = dateMatch ? dateMatch[1] : null;
       
-      // 优先使用直接从 tooltip 提取的数值
+      // 如果提取到数值，计算搜索量并在原生 tooltip 中插入
       if (Object.keys(termValuesFromTooltip).length > 0) {
         currentHoverData = {
           date: dateStr || '未知日期',
           values: termValuesFromTooltip,
           dataPoint: null
         };
-        console.log('[扩展] ========== 更新悬停数据（从 tooltip 直接提取）==========');
-        console.log('[扩展] 日期:', currentHoverData.date);
-        console.log('[扩展] 各词数值:', currentHoverData.values);
+        
+        // 在原生 tooltip 中插入转换后的数值
+        enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+        
         scheduleUpdate();
         return;
       }
@@ -583,12 +567,8 @@
         }
         
         if (matchedDataPoint) {
-          console.log('[扩展] 从 timelineData 找到匹配的数据点:', {
-            time: matchedDataPoint.time,
-            formattedTime: matchedDataPoint.formattedTime,
-            formattedValue: matchedDataPoint.formattedValue,
-            value: matchedDataPoint.value
-          });
+          // 精简日志：只在调试时输出
+          // console.log('[扩展] 从 timelineData 找到匹配的数据点');
           
           // 使用保存的关键词顺序（keywordsOrder）
           if (matchedDataPoint.formattedValue && Array.isArray(matchedDataPoint.formattedValue)) {
@@ -1174,7 +1154,147 @@
     }
   }
 
-  // 9) 修改原生tooltip，在数值后添加计算结果
+  // 9) 在原生 tooltip 中插入转换后的数值
+  function enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr) {
+    try {
+      // 清除之前的增强标记（如果 tooltip 内容已更新）
+      const currentText = tooltipElement.textContent || '';
+      const cachedText = tooltipContentCache.get(tooltipElement);
+      if (cachedText !== currentText) {
+        // 内容已更新，清除之前的增强标记
+        tooltipElement.dataset.enhanced = 'false';
+        // 移除之前添加的转换值（查找包含 "→" 的 span）
+        const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+        existingSpans.forEach(span => {
+          if (span.textContent.includes('→')) {
+            span.remove();
+          }
+        });
+      }
+      
+      // 检查是否已经处理过（避免重复处理）
+      if (tooltipElement.dataset.enhanced === 'true') {
+        return;
+      }
+      
+      // 查找参照词
+      const reference = findReferenceTerm(termValues);
+      
+      // 遍历 tooltip 的所有文本节点，找到数值并插入转换后的值
+      const walker = document.createTreeWalker(
+        tooltipElement,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode: function(node) {
+            const text = node.textContent?.trim() || '';
+            // 只处理包含 1-100 数字的文本节点
+            if (/^\d{1,3}$/.test(text)) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
+        }
+      );
+      
+      const textNodes = [];
+      let node;
+      while (node = walker.nextNode()) {
+        textNodes.push(node);
+      }
+      
+      // 为每个数值节点添加转换后的值
+      textNodes.forEach((textNode, index) => {
+        const value = parseInt(textNode.textContent.trim(), 10);
+        if (isNaN(value) || value < 0 || value > 100) {
+          return;
+        }
+        
+        // 找到对应的词（通过查找前面的文本节点）
+        let term = null;
+        let prevNode = textNode.previousSibling;
+        while (prevNode) {
+          if (prevNode.nodeType === Node.TEXT_NODE) {
+            const prevText = prevNode.textContent?.trim() || '';
+            if (prevText.length > 0 && !/^\d+$/.test(prevText) && !/\d{4}年/.test(prevText)) {
+              term = prevText;
+              break;
+            }
+          } else if (prevNode.nodeType === Node.ELEMENT_NODE) {
+            const prevText = prevNode.textContent?.trim() || '';
+            if (prevText.length > 0 && !/^\d+$/.test(prevText) && !/\d{4}年/.test(prevText)) {
+              // 尝试从元素中找到词名
+              const lines = prevText.split('\n');
+              for (const line of lines) {
+                if (line.length > 0 && !/^\d+$/.test(line) && !/\d{4}年/.test(line)) {
+                  term = line;
+                  break;
+                }
+              }
+              if (term) break;
+            }
+          }
+          prevNode = prevNode.previousSibling;
+        }
+        
+        // 如果找不到词，尝试从 termValues 中匹配（通过值匹配）
+        if (!term) {
+          for (const [t, v] of Object.entries(termValues)) {
+            if (v === value) {
+              term = t;
+              break;
+            }
+          }
+        }
+        
+        if (!term) return;
+        
+        // 计算搜索量
+        const termLower = term.toLowerCase().trim();
+        let dailySearch = null;
+        let monthlySearch = null;
+        
+        if (reference) {
+          const isReferenceTerm = termLower === reference.term || 
+                                 termLower.includes(reference.term) || 
+                                 reference.term.includes(termLower);
+          
+          if (isReferenceTerm) {
+            dailySearch = reference.dailySearch;
+          } else if (reference.chartValue > 0) {
+            dailySearch = reference.dailySearch * (value / reference.chartValue);
+          }
+        } else {
+          dailySearch = value * CAL_FACTOR;
+        }
+        
+        if (dailySearch !== null) {
+          monthlySearch = dailySearch * 30;
+          const dailyFormatted = formatToK(dailySearch);
+          const monthlyFormatted = formatToK(monthlySearch);
+          
+          // 在数值后面插入转换后的值
+          const span = document.createElement('span');
+          span.style.marginLeft = '4px';
+          span.style.color = '#666';
+          span.style.fontSize = '0.9em';
+          span.textContent = ` → ${dailyFormatted}/日 (${monthlyFormatted}/月)`;
+          
+          // 插入到数值节点后面
+          if (textNode.parentNode) {
+            textNode.parentNode.insertBefore(span, textNode.nextSibling);
+          }
+        }
+      });
+      
+      // 标记为已处理并缓存内容
+      tooltipElement.dataset.enhanced = 'true';
+      tooltipContentCache.set(tooltipElement, tooltipElement.textContent);
+    } catch (e) {
+      console.warn('[扩展] 增强原生 tooltip 时出错:', e);
+    }
+  }
+
+  // 10) 修改原生tooltip，在数值后添加计算结果（旧版本，保留兼容）
   const tooltipContentCache = new WeakMap(); // 缓存tooltip的内容哈希，用于检测内容变化
   
   function findGoogleTrendsTooltip() {
