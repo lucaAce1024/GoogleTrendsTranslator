@@ -1450,7 +1450,7 @@
         });
       }
       
-      // 调整 tooltip 宽度以适应内容，确保数值对齐
+      // 调整 tooltip 宽度以适应内容，确保每个词一行不换行
       // 使用 requestAnimationFrame 确保在 DOM 更新后执行
       requestAnimationFrame(() => {
         try {
@@ -1458,73 +1458,54 @@
           const allValueSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
           
           if (allValueSpans.length > 0) {
-            // 找到每个数值+转换值的父容器（通常是包含数值的行）
-            const valueContainers = new Set();
+            // 找到每个数值+转换值的行容器（包含词名和数值的完整行）
+            const rowContainers = new Set();
             allValueSpans.forEach(span => {
-              // 向上查找，找到包含数值的块级容器
+              // 向上查找，找到包含词名和数值的行容器
+              // Google Trends 的 tooltip 结构通常是：每个词和数值在同一个块级容器中
               let container = span.parentNode;
-              while (container && container !== tooltipElement) {
+              let depth = 0;
+              while (container && container !== tooltipElement && depth < 10) {
                 const style = window.getComputedStyle(container);
-                if (style.display === 'block' || style.display === 'flex') {
-                  valueContainers.add(container);
+                const containerText = container.textContent || '';
+                
+                // 如果是块级元素，且包含词名（字母）和数值，说明是行容器
+                if ((style.display === 'block' || style.display === 'flex') && 
+                    containerText.match(/[A-Za-z]/) && 
+                    containerText.match(/\d/)) {
+                  rowContainers.add(container);
                   break;
                 }
                 container = container.parentNode;
+                depth++;
               }
             });
             
-            // 为每个包含数值的容器设置样式，确保每个词一行
-            valueContainers.forEach(container => {
+            // 为每个行容器设置 nowrap，确保每个词一行不换行
+            let maxRowWidth = 0;
+            rowContainers.forEach(container => {
+              // 确保行容器不换行
+              container.style.whiteSpace = 'nowrap';
               container.style.display = 'block';
-              container.style.whiteSpace = 'normal'; // 允许正常换行，但保持块级布局
-            });
-            
-            // 计算所有数值+转换值的最大宽度，用于对齐
-            let maxValueWidth = 0;
-            allValueSpans.forEach(span => {
-              const parent = span.parentNode;
-              if (parent) {
-                // 获取包含数值和转换值的完整文本
-                const siblings = Array.from(parent.childNodes);
-                const valueIndex = siblings.indexOf(span.previousSibling);
-                if (valueIndex >= 0) {
-                  const valueNode = siblings[valueIndex];
-                  const fullText = (valueNode.textContent || '').trim() + span.textContent;
-                  
-                  // 创建临时元素测量宽度
-                  const temp = document.createElement('span');
-                  temp.style.visibility = 'hidden';
-                  temp.style.position = 'absolute';
-                  temp.style.whiteSpace = 'nowrap';
-                  temp.style.fontSize = window.getComputedStyle(span).fontSize;
-                  temp.textContent = fullText;
-                  document.body.appendChild(temp);
-                  const width = temp.offsetWidth;
-                  document.body.removeChild(temp);
-                  
-                  if (width > maxValueWidth) {
-                    maxValueWidth = width;
-                  }
-                }
+              
+              // 临时设置为 nowrap 来测量实际宽度
+              const originalWhiteSpace = container.style.whiteSpace;
+              container.style.whiteSpace = 'nowrap';
+              
+              // 测量这一行的实际宽度（使用 scrollWidth 获取内容宽度）
+              const width = container.scrollWidth || container.offsetWidth;
+              if (width > maxRowWidth) {
+                maxRowWidth = width;
               }
             });
             
-            // 为所有包含数值的容器设置最小宽度，确保数值对齐
-            if (maxValueWidth > 0) {
-              valueContainers.forEach(container => {
-                container.style.minWidth = maxValueWidth + 20 + 'px';
-              });
+            // 设置 tooltip 的宽度为最长行的宽度，确保所有行都不换行
+            if (maxRowWidth > 0) {
+              tooltipElement.style.width = 'auto';
+              tooltipElement.style.minWidth = maxRowWidth + 40 + 'px'; // 增加 40px 边距
+              tooltipElement.style.maxWidth = 'none';
+              tooltipElement.style.whiteSpace = 'normal'; // tooltip 本身允许换行（行与行之间）
             }
-          }
-          
-          // 调整 tooltip 整体宽度以适应内容
-          const currentWidth = tooltipElement.offsetWidth;
-          const scrollWidth = tooltipElement.scrollWidth;
-          
-          if (scrollWidth > currentWidth) {
-            tooltipElement.style.width = 'auto';
-            tooltipElement.style.minWidth = scrollWidth + 20 + 'px';
-            tooltipElement.style.maxWidth = 'none';
           }
         } catch (e) {
           // 忽略样式设置错误
