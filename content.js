@@ -1346,12 +1346,63 @@
           span.style.color = '#666';
           span.style.fontSize = '0.9em';
           span.style.whiteSpace = 'nowrap';
+          span.style.display = 'inline';
           span.textContent = searchVolumeText;
           
           // 插入到数值节点后面
           if (textNode.parentNode) {
             textNode.parentNode.insertBefore(span, textNode.nextSibling);
+            
+            // 确保父元素不换行
+            let parent = textNode.parentNode;
+            while (parent && parent !== tooltipElement) {
+              const style = window.getComputedStyle(parent);
+              if (style.display === 'block' || style.display === 'flex') {
+                parent.style.whiteSpace = 'nowrap';
+                parent.style.display = 'inline-block';
+              }
+              parent = parent.parentNode;
+            }
           }
+        }
+      });
+      
+      // 调整 tooltip 宽度以适应内容，防止换行
+      // 使用 requestAnimationFrame 确保在 DOM 更新后执行
+      requestAnimationFrame(() => {
+        try {
+          const tooltipStyle = window.getComputedStyle(tooltipElement);
+          const currentWidth = tooltipElement.offsetWidth;
+          const scrollWidth = tooltipElement.scrollWidth;
+          
+          // 如果内容宽度超过当前宽度，调整宽度
+          if (scrollWidth > currentWidth) {
+            tooltipElement.style.width = 'auto';
+            tooltipElement.style.minWidth = scrollWidth + 20 + 'px'; // 增加 20px 的边距
+            tooltipElement.style.maxWidth = 'none';
+          }
+          
+          // 确保 tooltip 不换行
+          tooltipElement.style.whiteSpace = 'nowrap';
+          
+          // 确保所有包含数值的行不换行
+          // 查找包含数值的父元素（通常是每行的容器）
+          textNodes.forEach(textNode => {
+            let parent = textNode.parentNode;
+            let depth = 0;
+            while (parent && parent !== tooltipElement && depth < 5) {
+              const parentStyle = window.getComputedStyle(parent);
+              // 如果是块级元素，改为 inline-block 并设置 nowrap
+              if (parentStyle.display === 'block' || parentStyle.display === 'flex') {
+                parent.style.whiteSpace = 'nowrap';
+                parent.style.display = 'inline-block';
+              }
+              parent = parent.parentNode;
+              depth++;
+            }
+          });
+        } catch (e) {
+          // 忽略样式设置错误
         }
       });
       
