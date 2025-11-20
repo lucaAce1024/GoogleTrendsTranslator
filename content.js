@@ -774,64 +774,117 @@
     if (!el) {
       el = document.createElement("div");
       el.id = "trends-volume-overlay";
-      el.innerHTML = `
-        <div class="title">
-          <span>估算搜索量</span>
-          <div class="mode-switch">
-            <button class="mode-btn ${displayMode === 'daily' ? 'active' : ''}" data-mode="daily">日</button>
-            <button class="mode-btn ${displayMode === 'monthly' ? 'active' : ''}" data-mode="monthly">月</button>
-          </div>
-        </div>
-        <div id="trends-volume-rows"></div>
-        <div class="sub">基于参照词动态折算</div>
-      `;
       document.body.appendChild(el);
-      makeDraggable(el);
       
-      // 绑定切换开关事件
-      const modeButtons = el.querySelectorAll('.mode-btn');
-      modeButtons.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const mode = btn.dataset.mode;
-          displayMode = mode;
-          
-          // 更新按钮状态
-          modeButtons.forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          
-          // 重新渲染
-          if (currentHoverData && currentHoverData.values) {
-            const reference = findReferenceTerm(currentHoverData.values);
-            render(currentHoverData.values, `估算搜索量（${currentHoverData.date}）`, reference);
-          } else if (Object.keys(apiData).length > 0) {
-            const reference = findReferenceTerm(apiData);
-            render(apiData, "估算搜索量（最后时间点）", reference);
-          }
-          
-          // 重新处理原生 tooltip
-          const tooltipSelectors = ['[role="tooltip"]', '[class*="tooltip"]'];
-          for (const selector of tooltipSelectors) {
-            const tooltips = document.querySelectorAll(selector);
-            for (const tooltip of tooltips) {
-              const text = tooltip.textContent || '';
-              if (text.includes('年') && text.includes('月') && !text.includes('估算搜索量')) {
-                // 清除之前的增强标记，重新处理
-                tooltip.dataset.enhanced = 'false';
-                const existingSpans = tooltip.querySelectorAll('span[style*="margin-left"]');
-                existingSpans.forEach(span => {
-                  if (span.textContent.includes('→')) {
-                    span.remove();
-                  }
-                });
-                // 重新提取并增强
-                extractDataFromTooltip();
-                break;
+      // 使用延迟确保 DOM 已插入
+      setTimeout(() => {
+        el.innerHTML = `
+          <div class="title">
+            <span>估算搜索量</span>
+            <div class="mode-switch">
+              <button class="mode-btn ${displayMode === 'daily' ? 'active' : ''}" data-mode="daily">日</button>
+              <button class="mode-btn ${displayMode === 'monthly' ? 'active' : ''}" data-mode="monthly">月</button>
+            </div>
+          </div>
+          <div id="trends-volume-rows"></div>
+          <div class="sub">基于参照词动态折算</div>
+        `;
+        
+        makeDraggable(el);
+        
+        // 绑定切换开关事件
+        const modeButtons = el.querySelectorAll('.mode-btn');
+        modeButtons.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const mode = btn.dataset.mode;
+            displayMode = mode;
+            
+            // 更新按钮状态
+            modeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // 重新渲染
+            if (currentHoverData && currentHoverData.values) {
+              const reference = findReferenceTerm(currentHoverData.values);
+              render(currentHoverData.values, `估算搜索量（${currentHoverData.date}）`, reference);
+            } else if (Object.keys(apiData).length > 0) {
+              const reference = findReferenceTerm(apiData);
+              render(apiData, "估算搜索量（最后时间点）", reference);
+            }
+            
+            // 重新处理原生 tooltip
+            const tooltipSelectors = ['[role="tooltip"]', '[class*="tooltip"]'];
+            for (const selector of tooltipSelectors) {
+              const tooltips = document.querySelectorAll(selector);
+              for (const tooltip of tooltips) {
+                const text = tooltip.textContent || '';
+                if (text.includes('年') && text.includes('月') && !text.includes('估算搜索量')) {
+                  // 清除之前的增强标记，重新处理
+                  tooltip.dataset.enhanced = 'false';
+                  const existingSpans = tooltip.querySelectorAll('span[style*="margin-left"]');
+                  existingSpans.forEach(span => {
+                    if (span.textContent.includes('→')) {
+                      span.remove();
+                    }
+                  });
+                  // 重新提取并增强
+                  extractDataFromTooltip();
+                  break;
+                }
               }
             }
-          }
+          });
         });
-      });
+      }, 0);
+    } else {
+      // 如果已存在，确保切换按钮已绑定事件
+      const modeButtons = el.querySelectorAll('.mode-btn');
+      if (modeButtons.length > 0 && !modeButtons[0].hasAttribute('data-listener-bound')) {
+        modeButtons.forEach(btn => {
+          btn.setAttribute('data-listener-bound', 'true');
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const mode = btn.dataset.mode;
+            displayMode = mode;
+            
+            // 更新按钮状态
+            modeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // 重新渲染
+            if (currentHoverData && currentHoverData.values) {
+              const reference = findReferenceTerm(currentHoverData.values);
+              render(currentHoverData.values, `估算搜索量（${currentHoverData.date}）`, reference);
+            } else if (Object.keys(apiData).length > 0) {
+              const reference = findReferenceTerm(apiData);
+              render(apiData, "估算搜索量（最后时间点）", reference);
+            }
+            
+            // 重新处理原生 tooltip
+            const tooltipSelectors = ['[role="tooltip"]', '[class*="tooltip"]'];
+            for (const selector of tooltipSelectors) {
+              const tooltips = document.querySelectorAll(selector);
+              for (const tooltip of tooltips) {
+                const text = tooltip.textContent || '';
+                if (text.includes('年') && text.includes('月') && !text.includes('估算搜索量')) {
+                  tooltip.dataset.enhanced = 'false';
+                  const existingSpans = tooltip.querySelectorAll('span[style*="margin-left"]');
+                  existingSpans.forEach(span => {
+                    if (span.textContent.includes('→')) {
+                      span.remove();
+                    }
+                  });
+                  extractDataFromTooltip();
+                  break;
+                }
+              }
+            }
+          });
+        });
+      }
     }
     return el;
   }
@@ -1367,11 +1420,36 @@
         }
       });
       
+      // 使用 MutationObserver 持续监听 tooltip 变化，确保转换值不被移除
+      if (!tooltipElement.dataset.observerAdded) {
+        tooltipElement.dataset.observerAdded = 'true';
+        const tooltipObserver = new MutationObserver((mutations) => {
+          // 检查是否有我们添加的 span 被移除
+          const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+          const hasOurSpans = Array.from(existingSpans).some(span => span.textContent.includes('→'));
+          
+          // 如果我们的 span 被移除了，重新添加
+          if (!hasOurSpans && Object.keys(termValues).length > 0) {
+            // 延迟重新添加，避免循环
+            setTimeout(() => {
+              if (tooltipElement.dataset.enhanced !== 'true') {
+                tooltipElement.dataset.enhanced = 'false';
+                enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr);
+              }
+            }, 50);
+          }
+        });
+        
+        tooltipObserver.observe(tooltipElement, {
+          childList: true,
+          subtree: true
+        });
+      }
+      
       // 调整 tooltip 宽度以适应内容，防止换行
       // 使用 requestAnimationFrame 确保在 DOM 更新后执行
       requestAnimationFrame(() => {
         try {
-          const tooltipStyle = window.getComputedStyle(tooltipElement);
           const currentWidth = tooltipElement.offsetWidth;
           const scrollWidth = tooltipElement.scrollWidth;
           
@@ -1382,20 +1460,22 @@
             tooltipElement.style.maxWidth = 'none';
           }
           
-          // 确保 tooltip 不换行
-          tooltipElement.style.whiteSpace = 'nowrap';
+          // 确保 tooltip 不换行（但不要强制设置，避免影响 Google Trends 的布局）
+          // tooltipElement.style.whiteSpace = 'nowrap';
           
           // 确保所有包含数值的行不换行
           // 查找包含数值的父元素（通常是每行的容器）
           textNodes.forEach(textNode => {
             let parent = textNode.parentNode;
             let depth = 0;
-            while (parent && parent !== tooltipElement && depth < 5) {
+            while (parent && parent !== tooltipElement && depth < 3) {
               const parentStyle = window.getComputedStyle(parent);
-              // 如果是块级元素，改为 inline-block 并设置 nowrap
-              if (parentStyle.display === 'block' || parentStyle.display === 'flex') {
-                parent.style.whiteSpace = 'nowrap';
-                parent.style.display = 'inline-block';
+              // 如果是块级元素，改为 inline-block 并设置 nowrap（但只针对包含我们添加的 span 的元素）
+              if (parent.querySelector('span[style*="margin-left"]')) {
+                if (parentStyle.display === 'block' || parentStyle.display === 'flex') {
+                  parent.style.whiteSpace = 'nowrap';
+                  parent.style.display = 'inline-block';
+                }
               }
               parent = parent.parentNode;
               depth++;
@@ -2011,20 +2091,20 @@
     }, 200); // 鼠标移动时稍微延迟更新
   }, { passive: true });
   
-  // 监听鼠标离开图表区域（延迟清除悬停数据）
-  document.addEventListener("mouseleave", (e) => {
-    // 延迟清除，避免快速移动时频繁清除
-    if (mouseLeaveTimer) {
-      clearTimeout(mouseLeaveTimer);
-    }
-    mouseLeaveTimer = setTimeout(() => {
-      if (currentHoverData !== null) {
-        console.log('[扩展] 鼠标离开图表区域，清除悬停数据');
-        currentHoverData = null;
-        scheduleUpdate();
-      }
-    }, 500); // 延迟 500ms，避免快速移动时误清除
-  }, { passive: true });
+  // 不再清除悬停数据，保持最后一次展示状态
+  // document.addEventListener("mouseleave", (e) => {
+  //   // 延迟清除，避免快速移动时频繁清除
+  //   if (mouseLeaveTimer) {
+  //     clearTimeout(mouseLeaveTimer);
+  //   }
+  //   mouseLeaveTimer = setTimeout(() => {
+  //     if (currentHoverData !== null) {
+  //       console.log('[扩展] 鼠标离开图表区域，清除悬停数据');
+  //       currentHoverData = null;
+  //       scheduleUpdate();
+  //     }
+  //   }, 500); // 延迟 500ms，避免快速移动时误清除
+  // }, { passive: true });
 
   function start() {
     ensureOverlay();
