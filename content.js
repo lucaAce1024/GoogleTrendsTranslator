@@ -25,6 +25,15 @@
   // 存储从API获取的数据
   let apiData = {};
   
+  // 存储完整的 timelineData（用于根据日期查找数据点）
+  let fullTimelineData = [];
+  
+  // 存储关键词顺序（从 URL 中提取，用于匹配 timelineData 的值）
+  let keywordsOrder = [];
+  
+  // 存储当前鼠标位置对应的数据点（从 tooltip 中提取）
+  let currentHoverData = null;
+  
   // 存储待处理的响应（在parseApiResponse定义前拦截到的请求）
   let pendingResponses = [];
   
@@ -292,6 +301,10 @@
           return;
         }
         
+        // 保存关键词顺序（用于后续匹配）
+        keywordsOrder = keywords.map(k => k.toLowerCase().trim());
+        console.log('[扩展] 保存关键词顺序:', keywordsOrder);
+        
         // 获取timelineData中最后一个时间点（按时间戳排序后的最后一个）
         // 按时间戳排序，确保获取最新的数据点
         let sortedTimeline = [...timelineData];
@@ -362,6 +375,10 @@
           }
         });
         
+        // 保存完整的 timelineData（用于根据日期查找数据点）
+        fullTimelineData = sortedTimeline;
+        console.log('[扩展] 已保存完整 timelineData，共', fullTimelineData.length, '个数据点');
+        
         // 更新API数据
         if (Object.keys(termValues).length > 0) {
           Object.assign(apiData, termValues);
@@ -376,6 +393,175 @@
     } catch (e) {
       console.warn('解析API数据失败:', e);
       // 不输出完整文本，避免控制台被刷屏
+    }
+  }
+
+  // 从 tooltip 中提取数据点信息
+  function extractDataFromTooltip() {
+    try {
+      // 查找所有可能的 tooltip 元素
+      const tooltipSelectors = [
+        '[role="tooltip"]',
+        '[class*="tooltip"]',
+        '[class*="hover"]'
+      ];
+      
+      let tooltipElement = null;
+      for (const selector of tooltipSelectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const el of elements) {
+          const style = window.getComputedStyle(el);
+          if ((style.position === 'absolute' || style.position === 'fixed') &&
+              parseInt(style.zIndex) > 1000 &&
+              style.display !== 'none' &&
+              el.textContent && el.textContent.trim().length > 0) {
+            tooltipElement = el;
+            break;
+          }
+        }
+        if (tooltipElement) break;
+      }
+      
+      // 如果没找到，尝试查找高 z-index 的绝对定位元素
+      if (!tooltipElement) {
+        const allElements = document.querySelectorAll('*');
+        for (const el of allElements) {
+          const style = window.getComputedStyle(el);
+          if ((style.position === 'absolute' || style.position === 'fixed') &&
+              parseInt(style.zIndex) > 1000 &&
+              style.display !== 'none') {
+            const text = el.textContent?.trim() || '';
+            // 检查是否包含日期格式（中文或英文）
+            if (text.length > 0 && (
+              /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
+              /\d{4}-\d{2}-\d{2}/.test(text) ||
+              /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
+            )) {
+              tooltipElement = el;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (!tooltipElement) {
+        // 没有找到 tooltip，清除当前悬停数据
+        if (currentHoverData !== null) {
+          currentHoverData = null;
+          scheduleUpdate();
+        }
+        return;
+      }
+      
+      const tooltipText = tooltipElement.textContent || '';
+      console.log('[扩展] 找到 tooltip，内容:', tooltipText.substring(0, 200));
+      
+      // 提取日期（支持中文和英文格式）
+      // 格式1: "2025年11月16日至22日"
+      // 格式2: "2025年11月16日"
+      // 格式3: "2024-11-20 2025-11-20"
+      // 格式4: "November 16, 2025"
+      let dateMatch = tooltipText.match(/(\d{4}年\d{1,2}月\d{1,2}日(?:至\d{1,2}日)?)/);
+      if (!dateMatch) {
+        dateMatch = tooltipText.match(/(\d{4}-\d{2}-\d{2})/);
+      }
+      if (!dateMatch) {
+        dateMatch = tooltipText.match(/([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
+      }
+      
+      if (!dateMatch) {
+        console.log('[扩展] 无法从 tooltip 中提取日期');
+        return;
+      }
+      
+      const dateStr = dateMatch[1];
+      console.log('[扩展] 提取的日期:', dateStr);
+      
+      // 在 timelineData 中查找匹配的数据点
+      let matchedDataPoint = null;
+      for (const point of fullTimelineData) {
+        if (point.formattedTime && point.formattedTime.includes(dateStr)) {
+          matchedDataPoint = point;
+          break;
+        }
+        // 也尝试匹配部分日期（处理日期范围的情况）
+        if (dateStr.includes('至')) {
+          const startDate = dateStr.split('至')[0];
+          if (point.formattedTime && point.formattedTime.includes(startDate)) {
+            matchedDataPoint = point;
+            break;
+          }
+        }
+      }
+      
+      if (!matchedDataPoint) {
+        console.log('[扩展] 在 timelineData 中未找到匹配的数据点');
+        return;
+      }
+      
+      console.log('[扩展] 找到匹配的数据点:', {
+        time: matchedDataPoint.time,
+        formattedTime: matchedDataPoint.formattedTime,
+        formattedValue: matchedDataPoint.formattedValue,
+        value: matchedDataPoint.value
+      });
+      
+      // 从 URL 中获取关键词顺序（如果还没有获取过）
+      const keywords = Object.keys(apiData).length > 0 
+        ? Object.keys(apiData).map(k => {
+            // 尝试从 apiData 的键中恢复原始关键词
+            // 这里需要保存原始关键词映射
+            return k;
+          })
+        : [];
+      
+      // 如果有 keywords，提取对应的值
+      if (matchedDataPoint.formattedValue && Array.isArray(matchedDataPoint.formattedValue)) {
+        const valueArray = matchedDataPoint.formattedValue;
+        const termValues = {};
+        
+        // 使用保存的关键词顺序（keywordsOrder）
+        if (keywordsOrder.length > 0 && keywordsOrder.length === valueArray.length) {
+          keywordsOrder.forEach((term, index) => {
+            const valueStr = valueArray[index];
+            const value = valueStr === null || valueStr === undefined || valueStr === '' 
+              ? 0 
+              : parseInt(valueStr, 10);
+            if (!isNaN(value) && value >= 0 && value <= 100) {
+              termValues[term] = value;
+            }
+          });
+        } else if (Object.keys(apiData).length > 0) {
+          // 如果没有 keywordsOrder，使用 apiData 的键顺序（如果可用）
+          const apiKeys = Object.keys(apiData);
+          if (apiKeys.length === valueArray.length) {
+            apiKeys.forEach((term, index) => {
+              const valueStr = valueArray[index];
+              const value = valueStr === null || valueStr === undefined || valueStr === '' 
+                ? 0 
+                : parseInt(valueStr, 10);
+              if (!isNaN(value) && value >= 0 && value <= 100) {
+                termValues[term] = value;
+              }
+            });
+          }
+        } else {
+          console.warn('[扩展] 无法确定关键词顺序，无法提取数据');
+          return;
+        }
+        
+        if (Object.keys(termValues).length > 0) {
+          currentHoverData = {
+            date: matchedDataPoint.formattedTime,
+            values: termValues,
+            dataPoint: matchedDataPoint
+          };
+          console.log('[扩展] 更新悬停数据:', currentHoverData);
+          scheduleUpdate();
+        }
+      }
+    } catch (e) {
+      console.warn('[扩展] 从 tooltip 提取数据失败:', e);
     }
   }
 
@@ -1379,11 +1565,17 @@
       // 暂时禁用原生tooltip修改，避免影响Google Trends
       // enhanceNativeTooltip();
       
-      // 优先使用API数据，如果没有则使用DOM解析的数据
+      // 优先级：1. 鼠标悬停数据（currentHoverData） 2. API数据（最后时间点） 3. DOM解析数据
       let reference = null;
       
-      if (Object.keys(apiData).length > 0) {
-        // 使用API数据（优先，最后一个时间点）
+      if (currentHoverData && currentHoverData.values && Object.keys(currentHoverData.values).length > 0) {
+        // 使用鼠标悬停位置的数据点
+        console.log('scheduleUpdate: 使用鼠标悬停数据', currentHoverData);
+        reference = findReferenceTerm(currentHoverData.values);
+        const title = `估算搜索量（${currentHoverData.date}）`;
+        render(currentHoverData.values, title, reference);
+      } else if (Object.keys(apiData).length > 0) {
+        // 使用API数据（最后时间点）
         console.log('scheduleUpdate: 使用API数据', apiData);
         reference = findReferenceTerm(apiData);
         render(apiData, "估算搜索量（最后时间点）", reference);
@@ -1449,30 +1641,56 @@
       // 延迟一点执行，确保DOM更新完成
       setTimeout(() => {
         try {
-          enhanceNativeTooltip();
+          // 从 tooltip 中提取数据点信息
+          extractDataFromTooltip();
+          // enhanceNativeTooltip(); // 暂时禁用原生 tooltip 修改
         } catch (e) {
-          console.warn('增强tooltip时出错:', e);
+          console.warn('处理 tooltip 时出错:', e);
         }
-      }, 10);
+      }, 50); // 增加延迟，确保 tooltip 内容完全更新
     }
   });
 
   // 监听鼠标移动（当鼠标在图表上移动时，工具提示会更新）
   // 使用节流，避免过度触发
   let mouseMoveTimer = null;
+  let mouseLeaveTimer = null;
+  
   document.addEventListener("mousemove", (e) => {
     // 只在鼠标在图表区域移动时更新（粗略判断：不在悬浮窗上）
     if (e.target.closest('#trends-volume-overlay')) {
       return;
     }
+    
+    // 清除离开计时器
+    if (mouseLeaveTimer) {
+      clearTimeout(mouseLeaveTimer);
+      mouseLeaveTimer = null;
+    }
+    
     if (mouseMoveTimer) {
       clearTimeout(mouseMoveTimer);
     }
     mouseMoveTimer = setTimeout(() => {
       scheduleUpdate();
-      // 鼠标移动时也尝试增强tooltip
-      enhanceNativeTooltip();
+      // 鼠标移动时也尝试从 tooltip 提取数据
+      extractDataFromTooltip();
     }, 150); // 鼠标移动时稍微延迟更新
+  }, { passive: true });
+  
+  // 监听鼠标离开图表区域（延迟清除悬停数据）
+  document.addEventListener("mouseleave", (e) => {
+    // 延迟清除，避免快速移动时频繁清除
+    if (mouseLeaveTimer) {
+      clearTimeout(mouseLeaveTimer);
+    }
+    mouseLeaveTimer = setTimeout(() => {
+      if (currentHoverData !== null) {
+        console.log('[扩展] 鼠标离开图表区域，清除悬停数据');
+        currentHoverData = null;
+        scheduleUpdate();
+      }
+    }, 500); // 延迟 500ms，避免快速移动时误清除
   }, { passive: true });
 
   function start() {
