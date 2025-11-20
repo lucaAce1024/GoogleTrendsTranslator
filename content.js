@@ -1251,7 +1251,21 @@
     if (titleNote) {
       const titleEl = overlay.querySelector(".title");
       if (titleEl) {
-        titleEl.textContent = titleNote;
+        // 只更新 title 中的文本部分，保留切换按钮
+        const titleSpan = titleEl.querySelector("span");
+        if (titleSpan) {
+          titleSpan.textContent = titleNote;
+        } else {
+          // 如果没有 span，创建一个并插入到切换按钮之前
+          const modeSwitch = titleEl.querySelector(".mode-switch");
+          const span = document.createElement("span");
+          span.textContent = titleNote;
+          if (modeSwitch) {
+            titleEl.insertBefore(span, modeSwitch);
+          } else {
+            titleEl.appendChild(span);
+          }
+        }
       }
     }
     
