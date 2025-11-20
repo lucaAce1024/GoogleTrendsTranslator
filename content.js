@@ -42,8 +42,6 @@
   
   // 立即设置网络请求拦截器（在页面加载前就设置，确保能拦截到所有请求）
   (function setupInterceptorsEarly() {
-    console.log('[扩展] 立即设置网络请求拦截器...');
-    
     // 拦截 fetch
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
@@ -51,13 +49,11 @@
       const urlString = typeof url === 'string' ? url : (url && url.url ? url.url : '');
       
       if (urlString && urlString.includes('/trends/api/widgetdata/multiline')) {
-        console.log('[扩展] 拦截到 fetch multiline 请求:', urlString.substring(0, 200));
         const fetchPromise = originalFetch.apply(this, args);
         
         // 异步处理响应，不阻塞原始请求
         fetchPromise.then(response => {
           if (!response.ok) {
-            console.warn('[扩展] fetch 响应状态码:', response.status);
             return;
           }
           
@@ -65,19 +61,14 @@
           const clonedResponse = response.clone();
           clonedResponse.text().then(text => {
             try {
-              console.log('[扩展] ========== 拦截到 fetch multiline 响应 ==========');
-              console.log('[扩展] URL:', urlString.substring(0, 300));
-              console.log('[扩展] 响应长度:', text.length);
-              console.log('[扩展] 响应前500字符:', text.substring(0, 500));
               // 如果parseApiResponse已定义，直接调用；否则保存待处理
               if (typeof parseApiResponse === 'function') {
                 parseApiResponse(text, urlString);
               } else {
-                console.log('[扩展] parseApiResponse未定义，保存待处理');
                 pendingResponses.push({ text, url: urlString });
               }
             } catch (e) {
-              console.warn('[扩展] 解析 fetch API响应失败:', e, e.stack);
+              console.warn('[扩展] 解析 fetch API响应失败:', e);
             }
           }).catch(e => {
             console.warn('[扩展] 读取 fetch 响应文本失败:', e);
@@ -102,7 +93,6 @@
 
     XMLHttpRequest.prototype.send = function(...args) {
       if (this._url && this._url.includes('/trends/api/widgetdata/multiline')) {
-        console.log('[扩展] 拦截到 XHR multiline 请求:', this._url.substring(0, 200));
         const xhr = this;
         
         // 监听 load 事件
@@ -110,25 +100,16 @@
           try {
             if (xhr.readyState === 4 && xhr.status === 200) {
               if (xhr.responseText) {
-                console.log('[扩展] ========== 拦截到 XHR multiline 响应 ==========');
-                console.log('[扩展] URL:', xhr._url.substring(0, 300));
-                console.log('[扩展] 响应长度:', xhr.responseText.length);
-                console.log('[扩展] 响应前500字符:', xhr.responseText.substring(0, 500));
                 // 如果parseApiResponse已定义，直接调用；否则保存待处理
                 if (typeof parseApiResponse === 'function') {
                   parseApiResponse(xhr.responseText, xhr._url);
                 } else {
-                  console.log('[扩展] parseApiResponse未定义，保存待处理');
                   pendingResponses.push({ text: xhr.responseText, url: xhr._url });
                 }
-              } else {
-                console.warn('[扩展] XHR 响应文本为空');
               }
-            } else {
-              console.warn('[扩展] XHR 状态异常，readyState:', xhr.readyState, 'status:', xhr.status);
             }
           } catch (e) {
-            console.warn('[扩展] 解析 XHR API响应失败:', e, e.stack);
+            console.warn('[扩展] 解析 XHR API响应失败:', e);
           }
         });
         
@@ -138,26 +119,21 @@
       }
       return originalSend.apply(this, args);
     };
-    
-    console.log('[扩展] 网络请求拦截器设置完成（早期设置）');
   })();
 
   // 拦截网络请求，获取Google Trends API数据
   function interceptNetworkRequests() {
-    console.log('设置网络请求拦截器...');
     
     // 拦截 fetch
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
       const url = args[0];
       if (typeof url === 'string' && url.includes('/trends/api/widgetdata/')) {
-        console.log('拦截到 fetch 请求:', url.substring(0, 200));
         return originalFetch.apply(this, args).then(response => {
           // 克隆响应以便读取
           const clonedResponse = response.clone();
           clonedResponse.text().then(text => {
             try {
-              console.log('开始解析 fetch 响应，URL:', url.substring(0, 200));
               parseApiResponse(text, url);
             } catch (e) {
               console.warn('解析 fetch API响应失败:', e);
@@ -185,11 +161,9 @@
 
     XMLHttpRequest.prototype.send = function(...args) {
       if (this._url && this._url.includes('/trends/api/widgetdata/')) {
-        console.log('拦截到 XHR 请求:', this._url.substring(0, 200));
         this.addEventListener('load', function() {
           try {
             if (this.responseText) {
-              console.log('开始解析 XHR 响应，URL:', this._url.substring(0, 200));
               parseApiResponse(this.responseText, this._url);
             } else {
               console.warn('XHR 响应文本为空');
@@ -205,29 +179,24 @@
       return originalSend.apply(this, args);
     };
     
-    console.log('网络请求拦截器设置完成');
   }
 
   // 从URL中解析搜索词
   function parseKeywordsFromUrl(url) {
     try {
-      console.log('开始解析URL中的关键词，URL:', url.substring(0, 200));
       const urlObj = new URL(url);
       const reqParam = urlObj.searchParams.get('req');
       if (!reqParam) {
-        console.warn('URL中没有req参数');
         return [];
       }
       
       // req参数是URL编码的JSON，需要解码
       const decodedReq = decodeURIComponent(reqParam);
-      console.log('解码后的req参数（前500字符）:', decodedReq.substring(0, 500));
       const reqData = JSON.parse(decodedReq);
       
       // 从comparisonItem中提取搜索词
       const keywords = [];
       if (reqData.comparisonItem && Array.isArray(reqData.comparisonItem)) {
-        console.log('找到 comparisonItem，数量:', reqData.comparisonItem.length);
         reqData.comparisonItem.forEach((item, idx) => {
           if (item.complexKeywordsRestriction && 
               item.complexKeywordsRestriction.keyword && 
@@ -235,7 +204,6 @@
             item.complexKeywordsRestriction.keyword.forEach(kw => {
               if (kw.value) {
                 keywords.push(kw.value);
-                console.log(`提取关键词[${idx}]:`, kw.value);
               }
             });
           } else {
@@ -246,7 +214,6 @@
         console.warn('reqData中没有comparisonItem或不是数组');
       }
       
-      console.log('最终提取的关键词:', keywords);
       return keywords;
     } catch (e) {
       console.warn('从URL解析搜索词失败:', e, e.stack);
@@ -284,7 +251,6 @@
         jsonText = jsonText.substring(1).trim();
       }
 
-      console.log('[扩展] 清理后的JSON前200字符:', jsonText.substring(0, 200));
       const data = JSON.parse(jsonText);
       
       // 解析 multiline 数据
@@ -306,7 +272,6 @@
         
         // 保存关键词顺序（用于后续匹配）
         keywordsOrder = keywords.map(k => k.toLowerCase().trim());
-        console.log('[扩展] 保存关键词顺序:', keywordsOrder);
         
         // 获取timelineData中最后一个时间点（按时间戳排序后的最后一个）
         // 按时间戳排序，确保获取最新的数据点
@@ -332,25 +297,6 @@
           return;
         }
         
-        // 调试：输出关键信息
-        console.log('========== [扩展] 开始解析 API 响应 ==========');
-        console.log('[扩展] timelineData总长度:', timelineData.length);
-        console.log('[扩展] 从URL解析的关键词（按顺序）:', keywords);
-        
-        // 打印最后3个数据点的详细信息
-        console.log('[扩展] 最后3个数据点详情:');
-        const last3Points = sortedTimeline.slice(-3);
-        last3Points.forEach((point, idx) => {
-          const actualIdx = sortedTimeline.length - 3 + idx;
-          console.log(`  [${actualIdx}] 时间: ${point.time} (${point.formattedTime})`);
-          console.log(`    formattedValue:`, point.formattedValue);
-          console.log(`    value:`, point.value);
-        });
-        
-        console.log('[扩展] 最后一个时间点（将使用此数据）:');
-        console.log('  时间:', lastDataPoint.time, lastDataPoint.formattedTime);
-        console.log('  formattedValue数组:', valueArray);
-        console.log('  value数组:', lastDataPoint.value);
         
         // 提取每个关键词的最新值（使用 formattedValue，按 URL 中的关键词顺序）
         const termValues = {};
@@ -367,7 +313,6 @@
             ? 0 
             : parseInt(valueStr, 10);
           
-          console.log(`关键词[${index}]: "${keyword}" = ${value} (原始: "${valueStr}")`);
           
           // 只处理有效值（0-100范围内的数字）
           if (!isNaN(value) && value >= 0 && value <= 100) {
@@ -380,13 +325,10 @@
         
         // 保存完整的 timelineData（用于根据日期查找数据点）
         fullTimelineData = sortedTimeline;
-        console.log('[扩展] 已保存完整 timelineData，共', fullTimelineData.length, '个数据点');
         
         // 更新API数据
         if (Object.keys(termValues).length > 0) {
           Object.assign(apiData, termValues);
-          console.log('API数据更新:', termValues);
-          console.log('完整apiData:', apiData);
           // 触发更新
           scheduleUpdateFromApi();
         } else {
@@ -606,7 +548,6 @@
         
         if (matchedDataPoint) {
           // 精简日志：只在调试时输出
-          // console.log('[扩展] 从 timelineData 找到匹配的数据点');
           
           // 使用保存的关键词顺序（keywordsOrder）
           if (matchedDataPoint.formattedValue && Array.isArray(matchedDataPoint.formattedValue)) {
@@ -630,15 +571,11 @@
                   values: termValues,
                   dataPoint: matchedDataPoint
                 };
-                console.log('[扩展] ========== 更新悬停数据（从 timelineData）==========');
-                console.log('[扩展] 日期:', currentHoverData.date);
-                console.log('[扩展] 各词数值:', currentHoverData.values);
                 scheduleUpdate();
               }
             }
           }
         } else {
-          console.log('[扩展] 在 timelineData 中未找到匹配的数据点');
         }
       }
     } catch (e) {
@@ -653,7 +590,6 @@
       return;
     }
     
-    console.log('scheduleUpdateFromApi: 使用API数据渲染', apiData);
     
     // 查找参照词
     const reference = findReferenceTerm(apiData);
@@ -665,7 +601,6 @@
   // 处理待处理的响应（在parseApiResponse定义后调用）
   function processPendingResponses() {
     if (pendingResponses.length > 0) {
-      console.log(`[扩展] 处理 ${pendingResponses.length} 个待处理的响应`);
       pendingResponses.forEach(({ text, url }) => {
         try {
           parseApiResponse(text, url);
@@ -680,11 +615,9 @@
   // 从 Performance API 查找最近的 multiline 请求并重新获取
   async function fetchLatestMultilineFromPerformance() {
     try {
-      console.log('[扩展] 尝试从 Performance API 查找最近的 multiline 请求...');
       
       // 获取所有网络请求
       const resources = performance.getEntriesByType('resource');
-      console.log('[扩展] 找到', resources.length, '个网络请求');
       
       // 查找最近的 multiline 请求
       let latestMultiline = null;
@@ -694,9 +627,7 @@
         const resourceName = resource.name || '';
         // 减少日志输出，只检查 multiline 请求
         if (resourceName.includes('/trends/api/widgetdata/multiline')) {
-          console.log('[扩展] 找到 multiline 请求:', resourceName.substring(0, 200));
           const requestTime = resource.responseEnd || resource.startTime || 0;
-          console.log('[扩展] 找到 multiline 请求:', resourceName.substring(0, 200), '时间:', requestTime);
           if (requestTime > latestTime) {
             latestTime = requestTime;
             latestMultiline = resource;
@@ -706,12 +637,9 @@
       
       if (latestMultiline) {
         const multilineUrl = latestMultiline.name;
-        console.log('[扩展] 找到最近的 multiline 请求:', multilineUrl.substring(0, 200));
-        console.log('[扩展] 请求时间:', latestTime);
         
         // 尝试从缓存中获取响应（避免重复请求）
         try {
-          console.log('[扩展] 开始从缓存获取 multiline 响应...');
           const response = await fetch(multilineUrl, {
             method: 'GET',
             headers: {
@@ -724,10 +652,6 @@
           
           if (response.ok) {
             const text = await response.text();
-            console.log('[扩展] ========== 从缓存获取的响应 ==========');
-            console.log('[扩展] 响应URL:', multilineUrl.substring(0, 300));
-            console.log('[扩展] 响应长度:', text.length);
-            console.log('[扩展] 响应前500字符:', text.substring(0, 500));
             
             // 尝试解析并打印 timelineData 数组
             try {
@@ -754,7 +678,6 @@
               const data = JSON.parse(jsonText);
               if (data.default && data.default.timelineData) {
                 const timelineData = data.default.timelineData;
-                console.log('[扩展] timelineData数组长度:', timelineData.length);
                 
                 // 按时间戳排序
                 const sorted = [...timelineData].sort((a, b) => {
@@ -765,20 +688,11 @@
                 
                 // 打印最后一个数据点
                 const lastPoint = sorted[sorted.length - 1];
-                console.log('[扩展] 最后一个时间点数据:');
-                console.log('  时间:', lastPoint.time, lastPoint.formattedTime);
-                console.log('  formattedValue:', lastPoint.formattedValue);
-                console.log('  value:', lastPoint.value);
-                console.log('  hasData:', lastPoint.hasData);
                 
                 // 打印最后3个数据点
                 const lastFew = sorted.slice(-3);
-                console.log('[扩展] 最后3个数据点:');
                 lastFew.forEach((point, idx) => {
                   const actualIdx = sorted.length - 3 + idx;
-                  console.log(`  [${actualIdx}] 时间: ${point.time} (${point.formattedTime})`);
-                  console.log(`    formattedValue:`, point.formattedValue);
-                  console.log(`    value:`, point.value);
                 });
               }
             } catch (parseErr) {
@@ -796,7 +710,6 @@
         console.warn('[扩展] 未找到 multiline 请求，已检查', resources.length, '个请求');
         // 输出所有请求的 URL 以便调试
         const allUrls = resources.map(r => r.name).filter(Boolean);
-        console.log('[扩展] 所有请求URL（前10个）:', allUrls.slice(0, 10));
       }
     } catch (e) {
       console.warn('[扩展] 从 Performance API 查找请求失败:', e, e.stack);
@@ -2088,19 +2001,16 @@
       if (currentHoverData && currentHoverData.values && Object.keys(currentHoverData.values).length > 0) {
         // 使用鼠标悬停位置的数据点
         // 减少日志输出，避免刷屏
-        // console.log('scheduleUpdate: 使用鼠标悬停数据', currentHoverData);
         reference = findReferenceTerm(currentHoverData.values);
         const title = `估算搜索量（${currentHoverData.date}）`;
         render(currentHoverData.values, title, reference);
       } else if (Object.keys(apiData).length > 0) {
         // 使用API数据（最后时间点）
         // 减少日志输出，避免刷屏
-        // console.log('scheduleUpdate: 使用API数据', apiData);
         reference = findReferenceTerm(apiData);
         render(apiData, "估算搜索量（最后时间点）", reference);
       } else {
         // 只在调试时输出日志，避免刷屏
-        // console.log('scheduleUpdate: API数据为空，使用DOM数据');
         // 使用DOM解析的数据
         const legendVals = readLegendValues();
         
@@ -2153,7 +2063,6 @@
                   )) {
                     shouldEnhance = true;
                     foundTooltip = true;
-                    console.log('[扩展] MutationObserver 检测到可能的 tooltip，z-index:', zIndex, '文本:', text.substring(0, 100));
                   }
                 }
               } catch (e) {
@@ -2182,7 +2091,6 @@
       }
       tooltipExtractTimer = setTimeout(() => {
         try {
-          console.log('[扩展] MutationObserver 触发，开始提取 tooltip 数据...');
           // 从 tooltip 中提取数据点信息
           extractDataFromTooltip();
           // enhanceNativeTooltip(); // 暂时禁用原生 tooltip 修改
@@ -2228,7 +2136,6 @@
   //   }
   //   mouseLeaveTimer = setTimeout(() => {
   //     if (currentHoverData !== null) {
-  //       console.log('[扩展] 鼠标离开图表区域，清除悬停数据');
   //       currentHoverData = null;
   //       scheduleUpdate();
   //     }
@@ -2247,17 +2154,13 @@
     
     // 如果 API 数据为空，尝试从 Performance API 获取（延迟更长时间，等待请求完成）
     if (Object.keys(apiData).length === 0) {
-      console.log('[扩展] API数据为空，将在3秒后尝试从 Performance API 获取...');
       setTimeout(() => {
         if (Object.keys(apiData).length === 0) {
-          console.log('[扩展] 延迟后仍无API数据，尝试从 Performance API 获取...');
           fetchLatestMultilineFromPerformance();
         } else {
-          console.log('[扩展] 延迟期间已获取到API数据，无需从 Performance API 获取');
         }
       }, 3000); // 延迟3秒，等待 multiline 请求完成
     } else {
-      console.log('[扩展] API数据已存在，无需从 Performance API 获取');
     }
     
     mo.observe(document.documentElement, {
