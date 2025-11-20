@@ -735,10 +735,28 @@
             </div>
           </div>
           <div id="trends-volume-rows"></div>
-          <div class="sub">基于参照词动态折算</div>
+          <div class="sub">
+            <span>基于参照词动态折算</span>
+            <button class="copy-btn" title="复制数据到剪贴板">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
         `;
         
         makeDraggable(el);
+        
+        // 绑定复制按钮事件
+        const copyBtn = el.querySelector('.copy-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            copyDataToClipboard();
+          });
+        }
         
         // 绑定切换开关事件
         const modeButtons = el.querySelectorAll('.mode-btn');
@@ -787,6 +805,17 @@
         });
       }, 0);
     } else {
+      // 如果已存在，确保复制按钮已绑定事件
+      const copyBtn = el.querySelector('.copy-btn');
+      if (copyBtn && !copyBtn.hasAttribute('data-listener-bound')) {
+        copyBtn.setAttribute('data-listener-bound', 'true');
+        copyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          copyDataToClipboard();
+        });
+      }
+      
       // 如果已存在，确保切换按钮已绑定事件
       const modeButtons = el.querySelectorAll('.mode-btn');
       if (modeButtons.length > 0 && !modeButtons[0].hasAttribute('data-listener-bound')) {
@@ -1709,6 +1738,156 @@
     } else {
       // 1M+，保留一位小数
       return (num / 1000000).toFixed(1) + 'M';
+    }
+  }
+
+  // 复制数据到剪贴板
+  function copyDataToClipboard() {
+    try {
+      // 获取当前显示的数据
+      let values = {};
+      let reference = null;
+      
+      // 优先使用悬停数据，否则使用API数据
+      if (currentHoverData && currentHoverData.values) {
+        values = currentHoverData.values;
+        reference = findReferenceTerm(values);
+      } else if (Object.keys(apiData).length > 0) {
+        values = apiData;
+        reference = findReferenceTerm(apiData);
+      } else {
+        console.warn('[扩展] 没有可复制的数据');
+        return;
+      }
+
+      // 获取参考词列表（用于过滤）
+      const referenceTerms = Object.keys(REFERENCE_TERMS).map(k => k.toLowerCase());
+      
+      // 构建复制数据
+      const copyLines = [];
+      
+      for (const [term, idx] of Object.entries(values)) {
+        const termLower = term.toLowerCase();
+        
+        // 过滤掉参考词
+        let isReferenceTerm = false;
+        for (const refTerm of referenceTerms) {
+          if (termLower === refTerm || termLower.includes(refTerm) || refTerm.includes(termLower)) {
+            isReferenceTerm = true;
+            break;
+          }
+        }
+        
+        if (isReferenceTerm) {
+          continue; // 跳过参考词
+        }
+        
+        // 只处理有效的数值
+        if (typeof idx !== "number" || idx < 0 || idx > 100) {
+          continue;
+        }
+        
+        // 计算搜索量（根据当前显示模式）
+        let searchVolume = null;
+        
+        if (reference) {
+          // 使用参照词计算（比例换算）
+          const isRefTerm = termLower === reference.term || 
+                           termLower.includes(reference.term) || 
+                           reference.term.includes(termLower);
+          
+          if (!isRefTerm && reference.chartValue > 0) {
+            // 其他词：根据与参照词的比例计算
+            const dailySearch = reference.dailySearch * (idx / reference.chartValue);
+            
+            // 根据显示模式选择日或月搜索量
+            if (displayMode === 'daily') {
+              searchVolume = Math.round(dailySearch);
+            } else {
+              // 月搜索量 = 日搜索量 × 30
+              searchVolume = Math.round(dailySearch * 30);
+            }
+          }
+        } else {
+          // 没有参照词，使用默认换算系数
+          const dailySearch = idx * CAL_FACTOR;
+          
+          if (displayMode === 'daily') {
+            searchVolume = Math.round(dailySearch);
+          } else {
+            searchVolume = Math.round(dailySearch * 30);
+          }
+        }
+        
+        // 只添加有效的搜索量
+        if (searchVolume !== null && searchVolume > 0) {
+          copyLines.push(`${term}\t${searchVolume}`);
+        }
+      }
+      
+      if (copyLines.length === 0) {
+        console.warn('[扩展] 没有可复制的数据（所有词都是参考词或无效）');
+        return;
+      }
+      
+      // 格式化为制表符分隔的文本
+      const copyText = copyLines.join('\n');
+      
+      // 复制到剪贴板
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(copyText).then(() => {
+          // 显示复制成功提示
+          const copyBtn = document.querySelector('.copy-btn');
+          if (copyBtn) {
+            const originalTitle = copyBtn.getAttribute('title') || '复制数据到剪贴板';
+            copyBtn.setAttribute('title', '已复制！');
+            setTimeout(() => {
+              copyBtn.setAttribute('title', originalTitle);
+            }, 2000);
+          }
+        }).catch(err => {
+          console.warn('[扩展] 复制失败:', err);
+          // 降级方案：使用传统方法
+          fallbackCopyToClipboard(copyText);
+        });
+      } else {
+        // 降级方案：使用传统方法
+        fallbackCopyToClipboard(copyText);
+      }
+    } catch (e) {
+      console.warn('[扩展] 复制数据时出错:', e);
+    }
+  }
+
+  // 降级复制方案（兼容旧浏览器）
+  function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        const copyBtn = document.querySelector('.copy-btn');
+        if (copyBtn) {
+          const originalTitle = copyBtn.getAttribute('title') || '复制数据到剪贴板';
+          copyBtn.setAttribute('title', '已复制！');
+          setTimeout(() => {
+            copyBtn.setAttribute('title', originalTitle);
+          }, 2000);
+        }
+      } else {
+        console.warn('[扩展] 复制失败');
+      }
+    } catch (err) {
+      console.warn('[扩展] 复制失败:', err);
+    } finally {
+      document.body.removeChild(textArea);
     }
   }
 
