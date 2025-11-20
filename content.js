@@ -399,7 +399,9 @@
   // 从 tooltip 中提取数据点信息
   function extractDataFromTooltip() {
     try {
-      // 查找所有可能的 tooltip 元素
+      console.log('[扩展] ========== extractDataFromTooltip 开始执行 ==========');
+      
+      // 方法1: 查找所有可能的 tooltip 元素
       const tooltipSelectors = [
         '[role="tooltip"]',
         '[class*="tooltip"]',
@@ -409,31 +411,42 @@
       let tooltipElement = null;
       for (const selector of tooltipSelectors) {
         const elements = document.querySelectorAll(selector);
+        console.log(`[扩展] 使用选择器 "${selector}" 找到 ${elements.length} 个元素`);
         for (const el of elements) {
-          const style = window.getComputedStyle(el);
-          if ((style.position === 'absolute' || style.position === 'fixed') &&
-              parseInt(style.zIndex) > 1000 &&
-              style.display !== 'none' &&
-              el.textContent && el.textContent.trim().length > 0) {
-            tooltipElement = el;
-            break;
+          try {
+            const style = window.getComputedStyle(el);
+            const zIndex = parseInt(style.zIndex) || 0;
+            if ((style.position === 'absolute' || style.position === 'fixed') &&
+                zIndex > 1000 &&
+                style.display !== 'none' &&
+                el.textContent && el.textContent.trim().length > 0) {
+              const text = el.textContent.trim();
+              console.log(`[扩展] 找到候选 tooltip (${selector}): z-index=${zIndex}, text="${text.substring(0, 100)}"`);
+              tooltipElement = el;
+              break;
+            }
+          } catch (e) {
+            // 忽略错误
           }
         }
         if (tooltipElement) break;
       }
       
-      // 如果没找到，尝试查找高 z-index 的绝对定位元素
+      // 方法2: 如果没找到，尝试查找所有高 z-index 的绝对定位 div 元素
       if (!tooltipElement) {
-        // 限制搜索范围，避免遍历所有元素导致性能问题
-        // 只搜索 div 元素，避免访问 SVG 元素的 className
-        const candidates = document.querySelectorAll('div');
-        for (const el of candidates) {
+        console.log('[扩展] 方法1未找到，尝试方法2：查找所有高 z-index 的 div');
+        const allDivs = document.querySelectorAll('div');
+        console.log(`[扩展] 总共找到 ${allDivs.length} 个 div 元素`);
+        
+        let candidateCount = 0;
+        for (const el of allDivs) {
           try {
-            // 完全避免访问 className，直接检查样式
             const style = window.getComputedStyle(el);
+            const zIndex = parseInt(style.zIndex) || 0;
             if ((style.position === 'absolute' || style.position === 'fixed') &&
-                parseInt(style.zIndex) > 1000 &&
+                zIndex > 1000 &&
                 style.display !== 'none') {
+              candidateCount++;
               const text = el.textContent?.trim() || '';
               // 检查是否包含日期格式（中文或英文）
               if (text.length > 0 && (
@@ -441,6 +454,7 @@
                 /\d{4}-\d{2}-\d{2}/.test(text) ||
                 /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
               )) {
+                console.log(`[扩展] 找到候选 tooltip (方法2): z-index=${zIndex}, text="${text.substring(0, 200)}"`);
                 tooltipElement = el;
                 break;
               }
@@ -450,13 +464,16 @@
             continue;
           }
         }
+        console.log(`[扩展] 方法2检查了 ${candidateCount} 个高 z-index 元素`);
       }
       
       if (!tooltipElement) {
-        // 没有找到 tooltip，但不立即清除悬停数据（可能只是暂时找不到）
-        // 使用延迟清除，避免频繁更新
+        // 没有找到 tooltip
+        console.log('[扩展] 未找到 tooltip 元素');
         return;
       }
+      
+      console.log('[扩展] 成功找到 tooltip 元素！');
       
       const tooltipText = tooltipElement.textContent || '';
       console.log('[扩展] ========== 找到 tooltip ==========');
@@ -1439,8 +1456,13 @@
             if (parent.tagName === 'svg' || parent.closest('svg')) {
               return;
             }
-            // 跳过可能包含className的元素，避免影响Google Trends的逻辑
-            if (parent.className && typeof parent.className !== 'string') {
+            // 安全地检查 className，避免触发 Google Trends 内部错误
+            try {
+              if (parent.className && typeof parent.className !== 'string') {
+                return;
+              }
+            } catch (e) {
+              // 如果访问 className 出错，直接跳过
               return;
             }
           }
@@ -1641,6 +1663,8 @@
   const tooltipObserver = new MutationObserver((mutations) => {
     // 检查是否有新的tooltip出现或内容更新
     let shouldEnhance = false;
+    let foundTooltip = false;
+    
     try {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList') {
@@ -1648,10 +1672,21 @@
             if (node.nodeType === 1) { // Element node
               try {
                 const style = window.getComputedStyle(node);
+                const zIndex = parseInt(style.zIndex) || 0;
                 if ((style.position === 'absolute' || style.position === 'fixed') &&
-                    parseInt(style.zIndex) > 1000 &&
+                    zIndex > 1000 &&
                     style.display !== 'none') {
-                  shouldEnhance = true;
+                  const text = node.textContent?.trim() || '';
+                  // 检查是否包含日期格式（更精确的判断）
+                  if (text.length > 0 && (
+                    /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
+                    /\d{4}-\d{2}-\d{2}/.test(text) ||
+                    /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
+                  )) {
+                    shouldEnhance = true;
+                    foundTooltip = true;
+                    console.log('[扩展] MutationObserver 检测到可能的 tooltip，z-index:', zIndex, '文本:', text.substring(0, 100));
+                  }
                 }
               } catch (e) {
                 // 忽略样式获取错误，避免影响Google Trends
@@ -1661,12 +1696,15 @@
         }
         if (mutation.type === 'characterData' || mutation.type === 'childList') {
           // 文本内容变化，可能是tooltip更新
-          shouldEnhance = true;
+          // 但只在找到可能的 tooltip 时才触发
+          if (foundTooltip) {
+            shouldEnhance = true;
+          }
         }
       });
     } catch (e) {
       // 忽略mutation处理错误，避免影响Google Trends
-      console.warn('处理mutation时出错:', e);
+      console.warn('[扩展] 处理mutation时出错:', e);
     }
     
     if (shouldEnhance) {
@@ -1676,11 +1714,12 @@
       }
       tooltipExtractTimer = setTimeout(() => {
         try {
+          console.log('[扩展] MutationObserver 触发，开始提取 tooltip 数据...');
           // 从 tooltip 中提取数据点信息
           extractDataFromTooltip();
           // enhanceNativeTooltip(); // 暂时禁用原生 tooltip 修改
         } catch (e) {
-          console.warn('处理 tooltip 时出错:', e);
+          console.warn('[扩展] 处理 tooltip 时出错:', e);
         }
       }, 100); // 防抖延迟 100ms
     }
@@ -1707,10 +1746,10 @@
       clearTimeout(mouseMoveTimer);
     }
     mouseMoveTimer = setTimeout(() => {
-      scheduleUpdate();
-      // 鼠标移动时也尝试从 tooltip 提取数据
+      // 鼠标移动时也尝试从 tooltip 提取数据（更频繁地检查）
       extractDataFromTooltip();
-    }, 150); // 鼠标移动时稍微延迟更新
+      scheduleUpdate();
+    }, 200); // 鼠标移动时稍微延迟更新
   }, { passive: true });
   
   // 监听鼠标离开图表区域（延迟清除悬停数据）
@@ -1771,8 +1810,8 @@
     // 初次渲染
     scheduleUpdate();
     
-    // 初次尝试增强tooltip
-    setTimeout(() => enhanceNativeTooltip(), 500);
+    // 完全禁用原生 tooltip 修改，避免触发 Google Trends 内部错误
+    // setTimeout(() => enhanceNativeTooltip(), 500);
 
     // 不再定期轮询，只在 DOM 变化时更新（通过 MutationObserver）
   }
