@@ -424,32 +424,41 @@
       
       // 如果没找到，尝试查找高 z-index 的绝对定位元素
       if (!tooltipElement) {
-        const allElements = document.querySelectorAll('*');
-        for (const el of allElements) {
-          const style = window.getComputedStyle(el);
-          if ((style.position === 'absolute' || style.position === 'fixed') &&
-              parseInt(style.zIndex) > 1000 &&
-              style.display !== 'none') {
-            const text = el.textContent?.trim() || '';
-            // 检查是否包含日期格式（中文或英文）
-            if (text.length > 0 && (
-              /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
-              /\d{4}-\d{2}-\d{2}/.test(text) ||
-              /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
-            )) {
-              tooltipElement = el;
-              break;
+        // 限制搜索范围，避免遍历所有元素导致性能问题
+        const candidates = document.querySelectorAll('div[style*="position"], div[style*="z-index"]');
+        for (const el of candidates) {
+          try {
+            // 安全地获取 className，避免触发 Google Trends 内部错误
+            const className = el.className;
+            if (className && typeof className !== 'string') {
+              continue; // 跳过非字符串的 className（如 SVGAnimatedString）
             }
+            
+            const style = window.getComputedStyle(el);
+            if ((style.position === 'absolute' || style.position === 'fixed') &&
+                parseInt(style.zIndex) > 1000 &&
+                style.display !== 'none') {
+              const text = el.textContent?.trim() || '';
+              // 检查是否包含日期格式（中文或英文）
+              if (text.length > 0 && (
+                /\d{4}年\d{1,2}月\d{1,2}日/.test(text) ||
+                /\d{4}-\d{2}-\d{2}/.test(text) ||
+                /[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(text)
+              )) {
+                tooltipElement = el;
+                break;
+              }
+            }
+          } catch (e) {
+            // 忽略单个元素的错误，继续查找
+            continue;
           }
         }
       }
       
       if (!tooltipElement) {
-        // 没有找到 tooltip，清除当前悬停数据
-        if (currentHoverData !== null) {
-          currentHoverData = null;
-          scheduleUpdate();
-        }
+        // 没有找到 tooltip，但不立即清除悬停数据（可能只是暂时找不到）
+        // 使用延迟清除，避免频繁更新
         return;
       }
       
@@ -1570,13 +1579,15 @@
       
       if (currentHoverData && currentHoverData.values && Object.keys(currentHoverData.values).length > 0) {
         // 使用鼠标悬停位置的数据点
-        console.log('scheduleUpdate: 使用鼠标悬停数据', currentHoverData);
+        // 减少日志输出，避免刷屏
+        // console.log('scheduleUpdate: 使用鼠标悬停数据', currentHoverData);
         reference = findReferenceTerm(currentHoverData.values);
         const title = `估算搜索量（${currentHoverData.date}）`;
         render(currentHoverData.values, title, reference);
       } else if (Object.keys(apiData).length > 0) {
         // 使用API数据（最后时间点）
-        console.log('scheduleUpdate: 使用API数据', apiData);
+        // 减少日志输出，避免刷屏
+        // console.log('scheduleUpdate: 使用API数据', apiData);
         reference = findReferenceTerm(apiData);
         render(apiData, "估算搜索量（最后时间点）", reference);
       } else {
@@ -1604,6 +1615,9 @@
   }
 
   const mo = new MutationObserver(scheduleUpdate);
+
+  // tooltip 提取防抖计时器
+  let tooltipExtractTimer = null;
 
   // 专门监听tooltip的MutationObserver
   const tooltipObserver = new MutationObserver((mutations) => {
@@ -1638,8 +1652,11 @@
     }
     
     if (shouldEnhance) {
-      // 延迟一点执行，确保DOM更新完成
-      setTimeout(() => {
+      // 使用防抖，避免频繁调用
+      if (tooltipExtractTimer) {
+        clearTimeout(tooltipExtractTimer);
+      }
+      tooltipExtractTimer = setTimeout(() => {
         try {
           // 从 tooltip 中提取数据点信息
           extractDataFromTooltip();
@@ -1647,7 +1664,7 @@
         } catch (e) {
           console.warn('处理 tooltip 时出错:', e);
         }
-      }, 50); // 增加延迟，确保 tooltip 内容完全更新
+      }, 100); // 防抖延迟 100ms
     }
   });
 
