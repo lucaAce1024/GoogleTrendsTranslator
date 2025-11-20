@@ -545,10 +545,12 @@
         };
         
         // 在原生 tooltip 中插入转换后的数值
-        // 使用延迟确保 tooltip 内容已完全更新
-        setTimeout(() => {
-          enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
-        }, 50);
+        // 立即应用，使用 requestAnimationFrame 确保在渲染后执行
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+          });
+        });
         
         // 使用 setInterval 持续检查并重新应用转换值（防止被 Google Trends 移除）
         // 清除之前的 interval（如果存在）
@@ -564,15 +566,18 @@
             return;
           }
           
-          // 检查是否有我们的转换值
-          const existingSpans = nativeTooltipElement.querySelectorAll('span[style*="margin-left"]');
-          const hasOurSpans = Array.from(existingSpans).some(span => span.textContent.includes('→'));
+          // 检查是否有我们的转换值（使用更精确的选择器）
+          const existingSpans = nativeTooltipElement.querySelectorAll('span[data-trends-volume="true"]');
+          const hasOurSpans = existingSpans.length > 0;
           
-          // 如果没有转换值，重新应用
+          // 如果没有转换值，立即重新应用
           if (!hasOurSpans && Object.keys(termValuesFromTooltip).length > 0) {
-            enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+            // 使用 requestAnimationFrame 确保在渲染后立即应用
+            requestAnimationFrame(() => {
+              enhanceNativeTooltipWithVolume(nativeTooltipElement, termValuesFromTooltip, dateStr);
+            });
           }
-        }, 150); // 每 150ms 检查一次
+        }, 50); // 每 50ms 检查一次，更频繁地重新应用
         
         // 保存 interval ID，以便后续清除
         nativeTooltipElement.dataset.checkIntervalId = checkInterval.toString();
@@ -1316,11 +1321,9 @@
     try {
       // 清除之前的增强标记和转换值
       tooltipElement.dataset.enhanced = 'false';
-      const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
+      const existingSpans = tooltipElement.querySelectorAll('span[data-trends-volume="true"]');
       existingSpans.forEach(span => {
-        if (span.textContent.includes('→')) {
-          span.remove();
-        }
+        span.remove();
       });
       
       // 检查 tooltip 是否仍然存在且可见
@@ -1361,9 +1364,35 @@
       }
       
       // 为每个数值节点添加转换后的值
+      // 使用 Map 存储每个数值节点对应的转换值，避免重复计算
+      const valueToConversionMap = new Map();
+      
       textNodes.forEach((textNode, index) => {
         const value = parseInt(textNode.textContent.trim(), 10);
         if (isNaN(value) || value < 0 || value > 100) {
+          return;
+        }
+        
+        // 如果已经处理过这个值，直接使用缓存的转换文本
+        if (valueToConversionMap.has(value)) {
+          const conversionText = valueToConversionMap.get(value);
+          // 检查是否已经添加了转换值
+          const nextSibling = textNode.nextSibling;
+          if (nextSibling && nextSibling.nodeType === Node.ELEMENT_NODE && 
+              nextSibling.textContent === conversionText) {
+            return; // 已经添加过了
+          }
+          // 插入转换值
+          const span = document.createElement('span');
+          span.style.marginLeft = '4px';
+          span.style.color = '#666';
+          span.style.fontSize = '0.9em';
+          span.style.whiteSpace = 'nowrap';
+          span.style.display = 'inline';
+          span.textContent = conversionText;
+          if (textNode.parentNode) {
+            textNode.parentNode.insertBefore(span, textNode.nextSibling);
+          }
           return;
         }
         
@@ -1438,6 +1467,20 @@
             searchVolumeText = ` → ${monthlyFormatted}/月`;
           }
           
+          // 缓存转换文本
+          valueToConversionMap.set(value, searchVolumeText);
+          
+          // 检查是否已经添加了转换值
+          const nextSibling = textNode.nextSibling;
+          if (nextSibling && nextSibling.nodeType === Node.ELEMENT_NODE && 
+              nextSibling.textContent === searchVolumeText) {
+            return; // 已经添加过了
+          }
+          
+          // 方法1：尝试直接修改文本节点内容（更激进，但可能被 Google Trends 覆盖）
+          // 方法2：插入 span 元素（当前方法）
+          // 优先使用方法2，因为它更稳定
+          
           // 在数值后面插入转换后的值
           const span = document.createElement('span');
           span.style.marginLeft = '4px';
@@ -1446,6 +1489,10 @@
           span.style.whiteSpace = 'nowrap';
           span.style.display = 'inline';
           span.textContent = searchVolumeText;
+          
+          // 添加唯一标识，方便后续查找
+          span.dataset.trendsVolume = 'true';
+          span.dataset.originalValue = value.toString();
           
           // 插入到数值节点后面
           if (textNode.parentNode) {
@@ -1462,8 +1509,8 @@
         
         const tooltipObserver = new MutationObserver((mutations) => {
           // 检查是否有我们添加的 span 被移除，或者 tooltip 内容发生了变化
-          const existingSpans = tooltipElement.querySelectorAll('span[style*="margin-left"]');
-          const hasOurSpans = Array.from(existingSpans).some(span => span.textContent.includes('→'));
+          const existingSpans = tooltipElement.querySelectorAll('span[data-trends-volume="true"]');
+          const hasOurSpans = existingSpans.length > 0;
           
           // 检查是否有节点被移除（说明 Google Trends 重新渲染了 tooltip）
           const hasRemovedNodes = mutations.some(mutation => 
@@ -1491,9 +1538,11 @@
                   span.remove();
                 }
               });
-              // 重新提取并增强
-              enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr);
-            }, 100); // 延迟 100ms，确保 Google Trends 完成更新
+              // 使用 requestAnimationFrame 确保在渲染后立即应用
+              requestAnimationFrame(() => {
+                enhanceNativeTooltipWithVolume(tooltipElement, termValues, dateStr);
+              });
+            }, 50); // 延迟 50ms，更快响应
           }
         });
         
