@@ -785,13 +785,6 @@
           <div class="sub">
             <div class="sub-left">
               <span class="sub-desc">基于参照词动态折算</span>
-              <div class="ref-dropdown-wrap">
-                <button type="button" class="ref-dropdown-trigger" title="配置预设词基准流量">参考词 ▼</button>
-                <div class="ref-dropdown-menu" id="ref-dropdown-menu" aria-hidden="true">
-                  <div class="ref-dropdown-list" id="ref-dropdown-list"></div>
-                  <button type="button" class="ref-dropdown-manage">管理参考词…</button>
-                </div>
-              </div>
             </div>
             <div class="sub-actions">
               <button class="ref-settings-btn" title="参考词与基准流量设置" aria-label="设置">⚙</button>
@@ -811,6 +804,7 @@
               <input type="number" id="ref-new-daily" placeholder="日流量" min="0" step="1" />
               <button type="button" class="ref-add-btn">添加</button>
             </div>
+            <div class="ref-save-toast" id="ref-save-toast" aria-live="polite"></div>
             <div class="ref-settings-footer">
               <button type="button" class="ref-save-btn">保存</button>
               <button type="button" class="ref-close-btn">关闭</button>
@@ -825,11 +819,6 @@
           el.setAttribute('data-overlay-delegation-bound', '1');
           el.addEventListener('click', overlayClickDelegation);
         }
-        const refPanel = el.querySelector('#ref-settings-panel');
-        if (refPanel) refPanel.addEventListener('click', (e) => e.stopPropagation());
-        const refDropdownMenu = el.querySelector('#ref-dropdown-menu');
-        if (refDropdownMenu) refDropdownMenu.addEventListener('click', (e) => e.stopPropagation());
-        
         // 绑定切换开关事件（保留以兼容可能的外部调用，委托已覆盖）
         const modeButtons = el.querySelectorAll('.mode-btn');
         modeButtons.forEach(btn => {
@@ -892,10 +881,6 @@
       if (!el.hasAttribute('data-overlay-delegation-bound')) {
         el.setAttribute('data-overlay-delegation-bound', '1');
         el.addEventListener('click', overlayClickDelegation);
-        const panel = el.querySelector('#ref-settings-panel');
-        const menu = el.querySelector('#ref-dropdown-menu');
-        if (panel) panel.addEventListener('click', (e) => e.stopPropagation());
-        if (menu) menu.addEventListener('click', (e) => e.stopPropagation());
       }
       
       // 如果已存在，确保切换按钮已绑定事件
@@ -954,7 +939,7 @@
     el.addEventListener("mousedown", e => {
       // 若点击的是可交互区域，不启动拖拽，让点击事件正常触发
       if (e.target.closest('#trends-volume-rows')) return;
-      if (e.target.closest('.sub')) return;           // 参考词 ▼、⚙、复制
+      if (e.target.closest('.sub')) return;           // ⚙、复制
       if (e.target.closest('.ref-settings-panel') || e.target.closest('#ref-settings-panel')) return;
       if (e.target.closest('.title')) return;         // 日/月 切换
       isDown = true;
@@ -1237,57 +1222,11 @@
     return div.innerHTML;
   }
 
-  /** 渲染参考词下拉菜单列表（仅展示预设词与基准流量） */
-  function renderRefDropdownList() {
-    const listEl = document.getElementById('ref-dropdown-list');
-    if (!listEl) return;
-    const entries = Object.entries(REFERENCE_TERMS).map(([key, info]) => ({
-      key,
-      name: info.name || key,
-      daily: Number(info.daily) || 0
-    }));
-    if (entries.length === 0) {
-      listEl.innerHTML = '<div class="ref-dropdown-empty">暂无预设词</div>';
-      return;
-    }
-    listEl.innerHTML = entries.map(
-      ({ name, daily }) => `<div class="ref-dropdown-item"><span class="ref-dropdown-name">${escapeHtml(name)}</span><span class="ref-dropdown-daily">${daily}/日</span></div>`
-    ).join('');
-  }
-
-  /** 切换参考词下拉菜单显示，并绑定一次“点击外部关闭” */
-  function toggleRefDropdown() {
-    const menu = document.getElementById('ref-dropdown-menu');
-    if (!menu) return;
-    const isHidden = menu.getAttribute('aria-hidden') !== 'false';
-    if (isHidden) {
-      renderRefDropdownList();
-      menu.setAttribute('aria-hidden', 'false');
-      menu.classList.add('ref-dropdown-open');
-      const closeOnOutside = function(e) {
-        if (menu.contains(e.target) || e.target.closest('.ref-dropdown-trigger')) return;
-        document.removeEventListener('click', closeOnOutside);
-        menu.setAttribute('aria-hidden', 'true');
-        menu.classList.remove('ref-dropdown-open');
-      };
-      setTimeout(() => document.addEventListener('click', closeOnOutside), 0);
-    } else {
-      menu.setAttribute('aria-hidden', 'true');
-      menu.classList.remove('ref-dropdown-open');
-    }
-  }
-
-  /** 悬浮窗内点击事件委托（参考词 ▼、⚙、复制、管理参考词、关闭、保存、添加、日/月） */
+  /** 悬浮窗内点击事件委托（⚙、复制、关闭、保存、添加、日/月） */
   function overlayClickDelegation(e) {
     const overlay = document.getElementById('trends-volume-overlay');
     if (!overlay || !e.target || !e.target.closest) return;
     if (!overlay.contains(e.target)) return;
-    if (e.target.closest('.ref-dropdown-trigger')) {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleRefDropdown();
-      return;
-    }
     if (e.target.closest('.ref-settings-btn')) {
       e.preventDefault();
       e.stopPropagation();
@@ -1299,21 +1238,6 @@
         } else {
           panel.style.display = 'none';
         }
-      }
-      return;
-    }
-    if (e.target.closest('.ref-dropdown-manage')) {
-      e.preventDefault();
-      e.stopPropagation();
-      const menu = document.getElementById('ref-dropdown-menu');
-      const panel = document.getElementById('ref-settings-panel');
-      if (menu) {
-        menu.setAttribute('aria-hidden', 'true');
-        menu.classList.remove('ref-dropdown-open');
-      }
-      if (panel) {
-        renderRefSettingsList();
-        panel.style.display = 'block';
       }
       return;
     }
@@ -1335,8 +1259,16 @@
       e.stopPropagation();
       saveRefSettingsFromPanel();
       const panel = document.getElementById('ref-settings-panel');
-      if (panel) panel.style.display = 'none';
-      scheduleUpdate();
+      const toast = document.getElementById('ref-save-toast');
+      if (toast) {
+        toast.textContent = '保存成功';
+        toast.classList.add('ref-save-toast-visible');
+      }
+      setTimeout(function() {
+        if (toast) toast.classList.remove('ref-save-toast-visible');
+        if (panel) panel.style.display = 'none';
+        scheduleUpdate();
+      }, 1800);
       return;
     }
     if (e.target.closest('.ref-add-btn')) {
@@ -1539,7 +1471,7 @@
       }
     }
     
-    // 只更新说明文字，保留 .sub 内的「参考词 ▼」与按钮
+    // 只更新说明文字，保留 .sub 内的 ⚙ 与复制按钮
     const subDesc = overlay.querySelector(".sub-desc");
     if (subDesc) {
       if (reference) {
