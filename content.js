@@ -1258,6 +1258,8 @@
       e.preventDefault();
       e.stopPropagation();
       saveRefSettingsFromPanel();
+      // 保存后立即用新参考词刷新 overlay 列表与底部说明（强制一次，不受节流影响）
+      scheduleUpdate(true);
       const panel = document.getElementById('ref-settings-panel');
       const toast = document.getElementById('ref-save-toast');
       if (toast) {
