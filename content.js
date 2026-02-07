@@ -2,12 +2,51 @@
 (function() {
   'use strict';
 
-  // 1) 参照词的已知搜索量
-  const REFERENCE_TERMS = {
+  // 1) 参照词的已知搜索量（内置默认，可被存储覆盖并扩展）
+  const DEFAULT_REFERENCE_TERMS = {
     'gpts': { daily: 2500, name: 'GPTs' },
     'casual games': { daily: 1250, name: 'Casual Games' }
   };
-  
+  let REFERENCE_TERMS = { ...JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS)) };
+
+  /** 从 chrome.storage.local 加载参考词配置并合并到 REFERENCE_TERMS */
+  function loadReferenceTermsFromStorage(callback) {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get('referenceTerms', function(data) {
+        if (data.referenceTerms && typeof data.referenceTerms === 'object') {
+          const merged = {};
+          for (const [key, val] of Object.entries(data.referenceTerms)) {
+            if (!key || typeof val !== 'object') continue;
+            const daily = Number(val.daily);
+            const name = (val.name != null && String(val.name).trim()) ? String(val.name).trim() : key;
+            if (!isNaN(daily) && daily >= 0) merged[key] = { daily, name };
+          }
+          REFERENCE_TERMS = Object.keys(merged).length > 0 ? merged : { ...JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS)) };
+        }
+        if (typeof callback === 'function') callback();
+      });
+    } else {
+      if (typeof callback === 'function') callback();
+    }
+  }
+
+  /** 将当前参考词保存到 chrome.storage.local */
+  function saveReferenceTermsToStorage(terms, callback) {
+    REFERENCE_TERMS = terms;
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ referenceTerms: terms }, function() {
+        if (typeof callback === 'function') callback();
+      });
+    } else {
+      if (typeof callback === 'function') callback();
+    }
+  }
+
+  /** 判断是否为内置默认参考词（不可删除，可编辑） */
+  function isBuiltinReferenceTerm(key) {
+    return Object.prototype.hasOwnProperty.call(DEFAULT_REFERENCE_TERMS, key);
+  }
+
   // 默认校准系数（如果没有找到参照词时使用）
   let CAL_FACTOR = 1250 / 63; // ≈ 19.8412698
 
@@ -307,13 +346,17 @@
             return; // 索引超出范围
           }
           
-          // 使用 formattedValue（字符串格式），转换为数字
+          // 使用 formattedValue（字符串格式），转换为数字（支持 "<1" 等格式）
           const valueStr = valueArray[index];
-          const value = valueStr === null || valueStr === undefined || valueStr === '' 
-            ? 0 
-            : parseInt(valueStr, 10);
-          
-          
+          let value;
+          if (valueStr === null || valueStr === undefined || valueStr === '') {
+            value = 0;
+          } else if (typeof valueStr === 'string' && valueStr.trim().toLowerCase().startsWith('<')) {
+            // "<1" 等表示小于某值，按 0 参与折算
+            value = 0;
+          } else {
+            value = parseInt(String(valueStr).replace(/[<\s]/g, ''), 10);
+          }
           // 只处理有效值（0-100范围内的数字）
           if (!isNaN(value) && value >= 0 && value <= 100) {
             const term = keyword.toLowerCase().trim();
@@ -557,9 +600,14 @@
             if (keywordsOrder.length > 0 && keywordsOrder.length === valueArray.length) {
               keywordsOrder.forEach((term, index) => {
                 const valueStr = valueArray[index];
-                const value = valueStr === null || valueStr === undefined || valueStr === '' 
-                  ? 0 
-                  : parseInt(valueStr, 10);
+                let value;
+                if (valueStr === null || valueStr === undefined || valueStr === '') {
+                  value = 0;
+                } else if (typeof valueStr === 'string' && valueStr.trim().toLowerCase().startsWith('<')) {
+                  value = 0;
+                } else {
+                  value = parseInt(String(valueStr).replace(/[<\s]/g, ''), 10);
+                }
                 if (!isNaN(value) && value >= 0 && value <= 100) {
                   termValues[term] = value;
                 }
@@ -707,9 +755,8 @@
           console.warn('[扩展] 获取请求失败:', e, e.stack);
         }
       } else {
-        console.warn('[扩展] 未找到 multiline 请求，已检查', resources.length, '个请求');
-        // 输出所有请求的 URL 以便调试
-        const allUrls = resources.map(r => r.name).filter(Boolean);
+        // 未找到 multiline 属正常（例如图表尚未加载、或数据来自 tooltip），仅调试时输出
+        console.debug('[扩展] 未找到 multiline 请求，已检查', resources.length, '个请求');
       }
     } catch (e) {
       console.warn('[扩展] 从 Performance API 查找请求失败:', e, e.stack);
@@ -736,29 +783,54 @@
           </div>
           <div id="trends-volume-rows"></div>
           <div class="sub">
-            <span>基于参照词动态折算</span>
-            <button class="copy-btn" title="复制数据到剪贴板">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </button>
+            <div class="sub-left">
+              <span class="sub-desc">基于参照词动态折算</span>
+              <div class="ref-dropdown-wrap">
+                <button type="button" class="ref-dropdown-trigger" title="配置预设词基准流量">参考词 ▼</button>
+                <div class="ref-dropdown-menu" id="ref-dropdown-menu" aria-hidden="true">
+                  <div class="ref-dropdown-list" id="ref-dropdown-list"></div>
+                  <button type="button" class="ref-dropdown-manage">管理参考词…</button>
+                </div>
+              </div>
+            </div>
+            <div class="sub-actions">
+              <button class="ref-settings-btn" title="参考词与基准流量设置" aria-label="设置">⚙</button>
+              <button class="copy-btn" title="复制数据到剪贴板">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="ref-settings-panel" id="ref-settings-panel" style="display:none;">
+            <div class="ref-settings-title">参考词与基准流量</div>
+            <div class="ref-settings-list" id="ref-settings-list"></div>
+            <div class="ref-settings-add">
+              <input type="text" id="ref-new-term" placeholder="词名" />
+              <input type="number" id="ref-new-daily" placeholder="日流量" min="0" step="1" />
+              <button type="button" class="ref-add-btn">添加</button>
+            </div>
+            <div class="ref-settings-footer">
+              <button type="button" class="ref-save-btn">保存</button>
+              <button type="button" class="ref-close-btn">关闭</button>
+            </div>
           </div>
         `;
         
         makeDraggable(el);
-        
-        // 绑定复制按钮事件
-        const copyBtn = el.querySelector('.copy-btn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            copyDataToClipboard();
-          });
+
+        // 使用事件委托：在 overlay 上统一处理点击，避免因加载顺序导致按钮无响应
+        if (!el.hasAttribute('data-overlay-delegation-bound')) {
+          el.setAttribute('data-overlay-delegation-bound', '1');
+          el.addEventListener('click', overlayClickDelegation);
         }
+        const refPanel = el.querySelector('#ref-settings-panel');
+        if (refPanel) refPanel.addEventListener('click', (e) => e.stopPropagation());
+        const refDropdownMenu = el.querySelector('#ref-dropdown-menu');
+        if (refDropdownMenu) refDropdownMenu.addEventListener('click', (e) => e.stopPropagation());
         
-        // 绑定切换开关事件
+        // 绑定切换开关事件（保留以兼容可能的外部调用，委托已覆盖）
         const modeButtons = el.querySelectorAll('.mode-btn');
         modeButtons.forEach(btn => {
           btn.addEventListener('click', (e) => {
@@ -815,6 +887,16 @@
           copyDataToClipboard();
         });
       }
+
+      // 如果已存在，确保事件委托已绑定（兜底：首次 ensureOverlay 时可能尚未执行 setTimeout）
+      if (!el.hasAttribute('data-overlay-delegation-bound')) {
+        el.setAttribute('data-overlay-delegation-bound', '1');
+        el.addEventListener('click', overlayClickDelegation);
+        const panel = el.querySelector('#ref-settings-panel');
+        const menu = el.querySelector('#ref-dropdown-menu');
+        if (panel) panel.addEventListener('click', (e) => e.stopPropagation());
+        if (menu) menu.addEventListener('click', (e) => e.stopPropagation());
+      }
       
       // 如果已存在，确保切换按钮已绑定事件
       const modeButtons = el.querySelectorAll('.mode-btn');
@@ -870,10 +952,11 @@
     let isDown = false, startX = 0, startY = 0, sx = 0, sy = 0;
 
     el.addEventListener("mousedown", e => {
-      // 如果点击的是内容区域，不拖拽
-      if (e.target.closest('#trends-volume-rows')) {
-        return;
-      }
+      // 若点击的是可交互区域，不启动拖拽，让点击事件正常触发
+      if (e.target.closest('#trends-volume-rows')) return;
+      if (e.target.closest('.sub')) return;           // 参考词 ▼、⚙、复制
+      if (e.target.closest('.ref-settings-panel') || e.target.closest('#ref-settings-panel')) return;
+      if (e.target.closest('.title')) return;         // 日/月 切换
       isDown = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -1078,22 +1161,232 @@
           }
         });
 
-        // 如果找到了 Casual Games 的平均值，更新校准系数
-        if (averages["casual games"]) {
-          CAL_FACTOR = 1250 / averages["casual games"];
-          // 更新悬浮窗中的系数显示
-          const overlay = document.getElementById("trends-volume-overlay");
-          if (overlay) {
-            const subEl = overlay.querySelector(".sub");
-            if (subEl) {
-              subEl.textContent = `基于线性映射：指数 × ${CAL_FACTOR.toFixed(2)} (校准: Casual Games 平均 ${averages["casual games"]} → 1250次/日)`;
+        // 若任一参考词在平均值中存在，用其更新校准系数
+        for (const [refKey, refInfo] of Object.entries(REFERENCE_TERMS)) {
+          if (averages[refKey] != null && averages[refKey] > 0) {
+            CAL_FACTOR = refInfo.daily / averages[refKey];
+            const overlay = document.getElementById("trends-volume-overlay");
+            if (overlay) {
+              const subDesc = overlay.querySelector(".sub-desc");
+              if (subDesc) {
+                subDesc.textContent = `基于线性映射：指数 × ${CAL_FACTOR.toFixed(2)} (校准: ${refInfo.name} 平均 ${averages[refKey]} → ${refInfo.daily}次/日)`;
+              }
             }
+            break;
           }
         }
       }
     }
 
     return averages;
+  }
+
+  /** 渲染参考词设置列表到 #ref-settings-list */
+  function renderRefSettingsList() {
+    const listEl = document.getElementById('ref-settings-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    for (const [key, info] of Object.entries(REFERENCE_TERMS)) {
+      const row = document.createElement('div');
+      row.className = 'ref-settings-row';
+      const canDelete = !isBuiltinReferenceTerm(key);
+      row.innerHTML = `
+        <span class="ref-term-name">${escapeHtml(info.name || key)}</span>
+        <input type="number" class="ref-daily-input" data-key="${escapeHtml(key)}" value="${Number(info.daily)}" min="0" step="1" />
+        ${canDelete ? '<button type="button" class="ref-del-btn" data-key="' + escapeHtml(key) + '">删除</button>' : '<span class="ref-builtin-hint">内置</span>'}
+      `;
+      listEl.appendChild(row);
+      const delBtn = row.querySelector('.ref-del-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', function() {
+          const k = this.getAttribute('data-key');
+          if (k && !isBuiltinReferenceTerm(k)) {
+            delete REFERENCE_TERMS[k];
+            REFERENCE_TERMS = { ...REFERENCE_TERMS };
+            renderRefSettingsList();
+          }
+        });
+      }
+    }
+  }
+
+  /** 从设置面板收集数据并保存到 storage，然后刷新 REFERENCE_TERMS */
+  function saveRefSettingsFromPanel() {
+    const listEl = document.getElementById('ref-settings-list');
+    if (!listEl) return;
+    const next = {};
+    listEl.querySelectorAll('.ref-settings-row').forEach(row => {
+      const key = row.querySelector('.ref-daily-input')?.getAttribute('data-key');
+      const dailyInput = row.querySelector('.ref-daily-input');
+      if (!key || !dailyInput) return;
+      const daily = parseInt(dailyInput.value || '0', 10);
+      if (isNaN(daily) || daily < 0) return;
+      const name = row.querySelector('.ref-term-name')?.textContent?.trim() || key;
+      next[key] = { daily, name };
+    });
+    if (Object.keys(next).length === 0) return;
+    saveReferenceTermsToStorage(next, function() {
+      scheduleUpdate();
+    });
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  /** 渲染参考词下拉菜单列表（仅展示预设词与基准流量） */
+  function renderRefDropdownList() {
+    const listEl = document.getElementById('ref-dropdown-list');
+    if (!listEl) return;
+    const entries = Object.entries(REFERENCE_TERMS).map(([key, info]) => ({
+      key,
+      name: info.name || key,
+      daily: Number(info.daily) || 0
+    }));
+    if (entries.length === 0) {
+      listEl.innerHTML = '<div class="ref-dropdown-empty">暂无预设词</div>';
+      return;
+    }
+    listEl.innerHTML = entries.map(
+      ({ name, daily }) => `<div class="ref-dropdown-item"><span class="ref-dropdown-name">${escapeHtml(name)}</span><span class="ref-dropdown-daily">${daily}/日</span></div>`
+    ).join('');
+  }
+
+  /** 切换参考词下拉菜单显示，并绑定一次“点击外部关闭” */
+  function toggleRefDropdown() {
+    const menu = document.getElementById('ref-dropdown-menu');
+    if (!menu) return;
+    const isHidden = menu.getAttribute('aria-hidden') !== 'false';
+    if (isHidden) {
+      renderRefDropdownList();
+      menu.setAttribute('aria-hidden', 'false');
+      menu.classList.add('ref-dropdown-open');
+      const closeOnOutside = function(e) {
+        if (menu.contains(e.target) || e.target.closest('.ref-dropdown-trigger')) return;
+        document.removeEventListener('click', closeOnOutside);
+        menu.setAttribute('aria-hidden', 'true');
+        menu.classList.remove('ref-dropdown-open');
+      };
+      setTimeout(() => document.addEventListener('click', closeOnOutside), 0);
+    } else {
+      menu.setAttribute('aria-hidden', 'true');
+      menu.classList.remove('ref-dropdown-open');
+    }
+  }
+
+  /** 悬浮窗内点击事件委托（参考词 ▼、⚙、复制、管理参考词、关闭、保存、添加、日/月） */
+  function overlayClickDelegation(e) {
+    const overlay = document.getElementById('trends-volume-overlay');
+    if (!overlay || !e.target || !e.target.closest) return;
+    if (!overlay.contains(e.target)) return;
+    if (e.target.closest('.ref-dropdown-trigger')) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleRefDropdown();
+      return;
+    }
+    if (e.target.closest('.ref-settings-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const panel = document.getElementById('ref-settings-panel');
+      if (panel) {
+        if (panel.style.display === 'none') {
+          renderRefSettingsList();
+          panel.style.display = 'block';
+        } else {
+          panel.style.display = 'none';
+        }
+      }
+      return;
+    }
+    if (e.target.closest('.ref-dropdown-manage')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const menu = document.getElementById('ref-dropdown-menu');
+      const panel = document.getElementById('ref-settings-panel');
+      if (menu) {
+        menu.setAttribute('aria-hidden', 'true');
+        menu.classList.remove('ref-dropdown-open');
+      }
+      if (panel) {
+        renderRefSettingsList();
+        panel.style.display = 'block';
+      }
+      return;
+    }
+    if (e.target.closest('.copy-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      copyDataToClipboard();
+      return;
+    }
+    if (e.target.closest('.ref-close-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const panel = document.getElementById('ref-settings-panel');
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    if (e.target.closest('.ref-save-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveRefSettingsFromPanel();
+      const panel = document.getElementById('ref-settings-panel');
+      if (panel) panel.style.display = 'none';
+      scheduleUpdate();
+      return;
+    }
+    if (e.target.closest('.ref-add-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const termInput = document.getElementById('ref-new-term');
+      const dailyInput = document.getElementById('ref-new-daily');
+      const term = (termInput?.value || '').trim().toLowerCase();
+      const daily = parseInt(dailyInput?.value || '0', 10);
+      if (term && !isNaN(daily) && daily >= 0) {
+        REFERENCE_TERMS[term] = { daily, name: term };
+        if (termInput) termInput.value = '';
+        if (dailyInput) dailyInput.value = '';
+        renderRefSettingsList();
+      }
+      return;
+    }
+    if (e.target.closest('.mode-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const btn = e.target.closest('.mode-btn');
+      const mode = btn?.dataset.mode;
+      if (!mode) return;
+      displayMode = mode;
+      overlay.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.remove('active');
+        if (b.dataset.mode === mode) b.classList.add('active');
+      });
+      if (currentHoverData && currentHoverData.values) {
+        const reference = findReferenceTerm(currentHoverData.values);
+        render(currentHoverData.values, `估算搜索量（${currentHoverData.date}）`, reference);
+      } else if (Object.keys(apiData).length > 0) {
+        const reference = findReferenceTerm(apiData);
+        render(apiData, "估算搜索量（最后时间点）", reference);
+      }
+      const tooltipSelectors = ['[role="tooltip"]', '[class*="tooltip"]'];
+      for (const selector of tooltipSelectors) {
+        const tooltips = document.querySelectorAll(selector);
+        for (const t of tooltips) {
+          const text = t.textContent || '';
+          if (text.includes('年') && text.includes('月') && !text.includes('估算搜索量')) {
+            t.dataset.enhanced = 'false';
+            const spans = t.querySelectorAll('span[style*="margin-left"]');
+            spans.forEach(s => { if (s.textContent.includes('→')) s.remove(); });
+            extractDataFromTooltip();
+            break;
+          }
+        }
+      }
+    }
   }
 
   // 7) 获取所有可见的搜索词（动态检测，不硬编码）
@@ -1246,14 +1539,14 @@
       }
     }
     
-    // 更新说明文字
-    const subEl = overlay.querySelector(".sub");
-    if (subEl) {
+    // 只更新说明文字，保留 .sub 内的「参考词 ▼」与按钮
+    const subDesc = overlay.querySelector(".sub-desc");
+    if (subDesc) {
       if (reference) {
         const refDailyFormatted = formatToK(reference.dailySearch);
-        subEl.textContent = `基于参照词: ${reference.name} (${reference.chartValue} → ${refDailyFormatted}/日)`;
+        subDesc.textContent = `基于参照词: ${reference.name} (${reference.chartValue} → ${refDailyFormatted}/日)`;
       } else {
-        subEl.textContent = `基于线性映射: 指数 × ${CAL_FACTOR.toFixed(2)}`;
+        subDesc.textContent = `基于线性映射: 指数 × ${CAL_FACTOR.toFixed(2)}`;
       }
     }
   }
@@ -2366,12 +2659,15 @@
     // 不再定期轮询，只在 DOM 变化时更新（通过 MutationObserver）
   }
 
-  // 等待页面加载完成
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start);
-  } else {
-    start();
+  // 先从 storage 加载参考词配置，再启动
+  function boot() {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start);
+    } else {
+      start();
+    }
   }
+  loadReferenceTermsFromStorage(boot);
 
   // 页面可见性变化时重新检测
   document.addEventListener("visibilitychange", () => {

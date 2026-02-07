@@ -103,6 +103,269 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+#trends-volume-overlay .sub-left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+#trends-volume-overlay .ref-dropdown-wrap {
+  position: relative;
+}
+
+#trends-volume-overlay .ref-dropdown-trigger {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+#trends-volume-overlay .ref-dropdown-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+#trends-volume-overlay .ref-dropdown-menu {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 180px;
+  max-height: 220px;
+  overflow: auto;
+  background: rgba(32, 33, 36, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  padding: 6px 0;
+  z-index: 10;
+  display: none;
+  cursor: default;
+}
+
+#trends-volume-overlay .ref-dropdown-menu.ref-dropdown-open {
+  display: block;
+}
+
+#trends-volume-overlay .ref-dropdown-list {
+  padding: 0 4px;
+}
+
+#trends-volume-overlay .ref-dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 11px;
+  gap: 8px;
+}
+
+#trends-volume-overlay .ref-dropdown-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trends-volume-overlay .ref-dropdown-daily {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+#trends-volume-overlay .ref-dropdown-empty {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#trends-volume-overlay .ref-dropdown-manage {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 12px;
+  font-size: 11px;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(66, 133, 244, 0.35);
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  border-radius: 0 0 6px 6px;
+}
+
+#trends-volume-overlay .ref-dropdown-manage:hover {
+  background: rgba(66, 133, 244, 0.55);
+}
+
+#trends-volume-overlay .sub-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#trends-volume-overlay .ref-settings-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.2s, background 0.2s;
+}
+
+#trends-volume-overlay .ref-settings-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#trends-volume-overlay .ref-settings-panel {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: default;
+}
+
+#trends-volume-overlay .ref-settings-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  opacity: 0.9;
+}
+
+#trends-volume-overlay .ref-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+#trends-volume-overlay .ref-settings-row .ref-term-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+#trends-volume-overlay .ref-settings-row .ref-daily-input {
+  width: 72px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+#trends-volume-overlay .ref-settings-row .ref-del-btn {
+  padding: 2px 6px;
+  font-size: 10px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(234, 67, 53, 0.5);
+  color: #fff;
+  cursor: pointer;
+}
+
+#trends-volume-overlay .ref-settings-row .ref-del-btn:hover {
+  background: rgba(234, 67, 53, 0.8);
+}
+
+#trends-volume-overlay .ref-settings-row .ref-builtin-hint {
+  font-size: 10px;
+  opacity: 0.6;
+  width: 28px;
+}
+
+#trends-volume-overlay .ref-settings-add {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+#trends-volume-overlay .ref-settings-add input[type="text"] {
+  width: 80px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+#trends-volume-overlay .ref-settings-add input[type="number"] {
+  width: 56px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+#trends-volume-overlay .ref-settings-add .ref-add-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(66, 133, 244, 0.6);
+  color: #fff;
+  cursor: pointer;
+}
+
+#trends-volume-overlay .ref-settings-add .ref-add-btn:hover {
+  background: rgba(66, 133, 244, 0.9);
+}
+
+#trends-volume-overlay .ref-settings-footer {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#trends-volume-overlay .ref-save-btn,
+#trends-volume-overlay .ref-close-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+#trends-volume-overlay .ref-save-btn:hover,
+#trends-volume-overlay .ref-close-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+#trends-volume-overlay .ref-save-btn {
+  background: rgba(52, 168, 83, 0.5);
+}
+
+#trends-volume-overlay .ref-save-btn:hover {
+  background: rgba(52, 168, 83, 0.75);
 }
 
 #trends-volume-overlay .copy-btn {
