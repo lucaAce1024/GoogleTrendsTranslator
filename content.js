@@ -4,8 +4,8 @@
 
   // 1) 参照词的已知搜索量（内置默认，可被存储覆盖并扩展）
   const DEFAULT_REFERENCE_TERMS = {
-    'gpts': { daily: 2500, name: 'GPTs' },
-    'casual games': { daily: 1250, name: 'Casual Games' }
+    'gpts': { daily: 5000, name: 'GPTs' },
+    'casual games': { daily: 2500, name: 'Casual Games' }
   };
   let REFERENCE_TERMS = { ...JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS)) };
 
