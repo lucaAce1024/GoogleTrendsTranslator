@@ -9,20 +9,20 @@
   };
   let REFERENCE_TERMS = { ...JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS)) };
 
-  /** 从 chrome.storage.local 加载参考词配置并合并到 REFERENCE_TERMS */
+  /** 从 chrome.storage.local 加载参考词配置，用存储值覆盖默认 */
   function loadReferenceTermsFromStorage(callback) {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get('referenceTerms', function(data) {
+        const base = JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS));
         if (data.referenceTerms && typeof data.referenceTerms === 'object') {
-          const merged = {};
           for (const [key, val] of Object.entries(data.referenceTerms)) {
             if (!key || typeof val !== 'object') continue;
             const daily = Number(val.daily);
             const name = (val.name != null && String(val.name).trim()) ? String(val.name).trim() : key;
-            if (!isNaN(daily) && daily >= 0) merged[key] = { daily, name };
+            if (!isNaN(daily) && daily >= 0) base[key] = { daily, name };
           }
-          REFERENCE_TERMS = Object.keys(merged).length > 0 ? merged : { ...JSON.parse(JSON.stringify(DEFAULT_REFERENCE_TERMS)) };
         }
+        REFERENCE_TERMS = base;
         if (typeof callback === 'function') callback();
       });
     } else {
@@ -30,11 +30,21 @@
     }
   }
 
-  /** 将当前参考词保存到 chrome.storage.local */
+  /** 将当前参考词保存到 chrome.storage.local（存为可序列化副本并检查错误） */
   function saveReferenceTermsToStorage(terms, callback) {
     REFERENCE_TERMS = terms;
+    var payload = {};
+    try {
+      payload = JSON.parse(JSON.stringify(terms));
+    } catch (e) {
+      if (typeof callback === 'function') callback();
+      return;
+    }
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ referenceTerms: terms }, function() {
+      chrome.storage.local.set({ referenceTerms: payload }, function() {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          console.warn('[扩展] 参考词保存失败:', chrome.runtime.lastError.message);
+        }
         if (typeof callback === 'function') callback();
       });
     } else {

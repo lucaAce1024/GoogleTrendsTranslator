@@ -3,13 +3,16 @@
   "name": "Trends Volume",
   "version": "0.1.0",
   "description": "将 Google 趋势指数换算为估算搜索量并显示悬浮窗。",
+  "permissions": ["storage"],
   "content_scripts": [
     {
-      "matches": ["https://trends.google.com/*", "https://trends.google.com.cn/*"],
+      "matches": [
+        "https://trends.google.com/*",
+        "https://trends.google.com.cn/*"
+      ],
       "js": ["content.js"],
       "css": ["styles.css"],
       "run_at": "document_start"
     }
   ]
 }
-
